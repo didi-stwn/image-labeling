@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/image-labeling/static/css/main.e6c13ad2.css",
+    "main.js": "/image-labeling/static/js/main.6c4fb329.js",
+    "static/js/453.3d5a8d6e.chunk.js": "/image-labeling/static/js/453.3d5a8d6e.chunk.js",
+    "index.html": "/image-labeling/index.html",
+    "main.e6c13ad2.css.map": "/image-labeling/static/css/main.e6c13ad2.css.map",
+    "main.6c4fb329.js.map": "/image-labeling/static/js/main.6c4fb329.js.map",
+    "453.3d5a8d6e.chunk.js.map": "/image-labeling/static/js/453.3d5a8d6e.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e6c13ad2.css",
+    "static/js/main.6c4fb329.js"
+  ]
+}
