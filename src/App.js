@@ -1,8 +1,8 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   MousePointer2, Square, Circle, Minus, ArrowUpRight, Type as TypeIcon,
   Pencil, Image as ImageIcon, ImagePlus, Trash2, Copy, Download, Undo2, Redo2,
-  ClipboardPaste, RotateCw, Palette, ClipboardCheck, Triangle,
+  ClipboardPaste, RotateCw, ClipboardCheck, Triangle,
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -166,7 +166,7 @@ export default function App() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [editingTextId, bgImage]);
+  }, [editingTextId, bgImage, addOverlayImage]);
 
   function loadImageFile(file) {
     if (!file) return;
@@ -725,7 +725,7 @@ export default function App() {
                       </div>
                     )
                   ) : el.type === "image" ? (
-                    <img src={el.src} draggable={false}
+                    <img src={el.src} draggable={false} alt="shape"
                       style={{ width: "100%", height: "100%", objectFit: "fill", userSelect: "none", pointerEvents: "none" }} />
                   ) : (
                     <ShapeSVG el={el} />
