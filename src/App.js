@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   MousePointer2, Square, Circle, Minus, ArrowUpRight, Type as TypeIcon,
   Pencil, Image as ImageIcon, ImagePlus, Trash2, Copy, Download, Undo2, Redo2,
-  ClipboardPaste, RotateCw, ClipboardCheck, Triangle,
+  ClipboardPaste, RotateCw, ClipboardCheck, Triangle, Camera, ZoomIn, ZoomOut, Hand,
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -11,6 +11,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const TOOLS = [
   { id: "select", icon: MousePointer2, label: "Select" },
+  { id: "pan", icon: Hand, label: "Pan" },
   { id: "rect", icon: Square, label: "Rectangle" },
   { id: "ellipse", icon: Circle, label: "Ellipse" },
   { id: "triangle", icon: Triangle, label: "Triangle" },
@@ -120,6 +121,7 @@ export default function App() {
   const [bgImage, setBgImage] = useState(null); // {src, width, height}
   const [canvasSize, setCanvasSize] = useState({ width: 900, height: 560 });
   const [canvasColor, setCanvasColor] = useState("#ffffff");
+  const [zoom, setZoom] = useState(1);
   const [elements, setElements] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [tool, setTool] = useState("select");
@@ -130,9 +132,24 @@ export default function App() {
   const [editingTextId, setEditingTextId] = useState(null);
   const [copyStatus, setCopyStatus] = useState(null); // null | "copied" | "failed"
 
-  const canvasRef = useRef(null);
-  const dragRef = useRef(null); // info about ongoing drag/draw/resize/rotate
+  // Image overlay popover & screenshot states
+  const [showImagePopover, setShowImagePopover] = useState(false);
+  const [showBgImagePopover, setShowBgImagePopover] = useState(false);
+  const [screenshotData, setScreenshotData] = useState(null); // {src, width, height} of captured screenshot
+  const [cropRect, setCropRect] = useState(null); // {x, y, w, h} relative to the screenshot natural size
+  const [isCropping, setIsCropping] = useState(false);
+  const [screenshotMode, setScreenshotMode] = useState("overlay"); // "overlay" | "background"
+  const cropDragRef = useRef(null);
 
+  const canvasRef = useRef(null);
+  const canvasContainerRef = useRef(null);
+  const dragRef = useRef(null); // info about ongoing drag/draw/resize/rotate
+  const panRef = useRef(null); // {startX, startY, scrollLeft, scrollTop} for middle-button pan
+  const imagePopoverRef = useRef(null);
+  const bgImagePopoverRef = useRef(null);
+  const overlayFileInputRef = useRef(null);
+  const bgFileInputRef = useRef(null);
+  const pipWindowRef = useRef(null);
   const pushHistory = useCallback((els) => {
     setHistory((h) => [...h.slice(-49), els]);
     setFuture([]);
@@ -145,6 +162,190 @@ export default function App() {
       return next;
     });
   }, [pushHistory]);
+
+  // ---------- screenshot capture via PiP window ----------
+  async function startScreenshot(mode = "overlay") {
+    setShowImagePopover(false);
+    setShowBgImagePopover(false);
+    setScreenshotMode(mode);
+    try {
+      // 1. Open a Document Picture-in-Picture window with a "Capture" button
+      const pipWindow = await window.documentPictureInPicture.requestWindow({
+        width: 420,
+        height: 300,
+      });
+      pipWindowRef.current = pipWindow;
+      const doc = pipWindow.document;
+
+      // Helper to update the PiP body content
+      function setPipContent(html) {
+        doc.body.innerHTML = html;
+      }
+
+      // Initial content: simple Capture button
+      setPipContent(`
+        <div style="display:flex;align-items:center;justify-content:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+          <button id="capture-btn" style="padding:14px 40px;font-size:18px;font-weight:600;border:none;border-radius:12px;cursor:pointer;background:#3b82f6;color:#fff;box-shadow:0 4px 16px rgba(59,130,246,.3);">Capture</button>
+        </div>
+      `);
+
+      // 2. When "Capture" is clicked, request screen share
+      doc.getElementById('capture-btn').addEventListener('click', async () => {
+        try {
+          // Request screen share – browser shows native dialog
+          const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+
+          // 4. Close PiP window so it doesn't appear in the screenshot
+          pipWindow.close();
+          pipWindowRef.current = null;
+
+          // Wait a moment for the OS to remove the PiP overlay from the screen
+          await new Promise((r) => setTimeout(r, 400));
+
+          // 5. Capture a single frame from the stream
+          const video = document.createElement("video");
+          video.srcObject = stream;
+          await video.play();
+
+          const captureCanvas = document.createElement("canvas");
+          captureCanvas.width = video.videoWidth;
+          captureCanvas.height = video.videoHeight;
+          const ctx = captureCanvas.getContext("2d");
+          ctx.drawImage(video, 0, 0);
+
+          // Stop the stream
+          stream.getTracks().forEach((t) => t.stop());
+
+          const dataUrl = captureCanvas.toDataURL("image/png");
+          setScreenshotData({ src: dataUrl, width: video.videoWidth, height: video.videoHeight });
+          setCropRect(null);
+          setIsCropping(true);
+        } catch (err) {
+          // User cancelled the screen picker, or PiP closed
+          try { pipWindow.close(); } catch (_) { }
+          pipWindowRef.current = null;
+        }
+      });
+
+      // Handle PiP window close (user closed it without capturing)
+      pipWindow.addEventListener('pagehide', () => {
+        pipWindowRef.current = null;
+      });
+    } catch (err) {
+      // PiP API not supported – silently ignore
+    }
+  }
+
+  function getCropClientPoint(e) {
+    const rect = document.getElementById("crop-image")?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function onCropPointerDown(e) {
+    if (e.button !== 0) return;
+    const pt = getCropClientPoint(e);
+    cropDragRef.current = { startX: pt.x, startY: pt.y };
+    window.addEventListener("pointermove", onCropPointerMove);
+    window.addEventListener("pointerup", onCropPointerUp);
+  }
+
+  function onCropPointerMove(e) {
+    const drag = cropDragRef.current;
+    if (!drag) return;
+    const pt = getCropClientPoint(e);
+    const imgEl = document.getElementById("crop-image");
+    if (!imgEl) return;
+    const rect = imgEl.getBoundingClientRect();
+    // Clamp to image bounds
+    const cx = Math.max(0, Math.min(pt.x, rect.width));
+    const cy = Math.max(0, Math.min(pt.y, rect.height));
+    const x = Math.min(drag.startX, cx);
+    const y = Math.min(drag.startY, cy);
+    const w = Math.abs(cx - drag.startX);
+    const h = Math.abs(cy - drag.startY);
+    setCropRect({ x, y, w, h });
+  }
+
+  function onCropPointerUp() {
+    cropDragRef.current = null;
+    window.removeEventListener("pointermove", onCropPointerMove);
+    window.removeEventListener("pointerup", onCropPointerUp);
+  }
+
+  function saveScreenshot() {
+    if (!screenshotData) return;
+    const img = new window.Image();
+    img.onload = () => {
+      const imgEl = document.getElementById("crop-image");
+      if (!imgEl) return;
+      const displayRect = imgEl.getBoundingClientRect();
+      const scaleX = screenshotData.width / displayRect.width;
+      const scaleY = screenshotData.height / displayRect.height;
+
+      // If user dragged a crop area, use it; otherwise use the full image
+      let sx, sy, sw, sh;
+      if (cropRect && cropRect.w > 0 && cropRect.h > 0) {
+        sx = cropRect.x * scaleX;
+        sy = cropRect.y * scaleY;
+        sw = cropRect.w * scaleX;
+        sh = cropRect.h * scaleY;
+      } else {
+        sx = 0; sy = 0;
+        sw = screenshotData.width;
+        sh = screenshotData.height;
+      }
+
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = sw;
+      outCanvas.height = sh;
+      const ctx = outCanvas.getContext("2d");
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      const croppedSrc = outCanvas.toDataURL("image/png");
+
+      if (screenshotMode === "background") {
+        // Set as background image
+        setBgImage({ src: croppedSrc, width: sw, height: sh });
+        setCanvasSize({ width: sw, height: sh });
+        setElements([]);
+        setHistory([]);
+        setFuture([]);
+        setSelectedId(null);
+      } else {
+        // Add as overlay image on the current canvas
+        const canvasW = canvasSize.width;
+        const canvasH = canvasSize.height;
+        const maxDim = 300;
+        const ratio = Math.min(maxDim / sw, maxDim / sh, 1);
+        const w = sw * ratio;
+        const h = sh * ratio;
+        const el = {
+          id: uid(), type: "image", src: croppedSrc,
+          x: (canvasW - w) / 2, y: (canvasH - h) / 2, width: w, height: h, rotation: 0,
+          keepAspectRatio: true,
+        };
+        updateElements((prev) => [...prev, el]);
+        setSelectedId(el.id);
+        setTool("select");
+      }
+
+      setIsCropping(false);
+      setScreenshotData(null);
+      setCropRect(null);
+    };
+    img.src = screenshotData.src;
+  }
+
+  function cancelScreenshot() {
+    // Close PiP if still open
+    if (pipWindowRef.current) {
+      try { pipWindowRef.current.close(); } catch (_) { }
+      pipWindowRef.current = null;
+    }
+    setIsCropping(false);
+    setScreenshotData(null);
+    setCropRect(null);
+  }
 
   // ---------- clipboard paste (image) ----------
   useEffect(() => {
@@ -166,7 +367,7 @@ export default function App() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [editingTextId, bgImage, addOverlayImage]);
+  }, [editingTextId, bgImage]);
 
   function loadImageFile(file) {
     if (!file) return;
@@ -205,6 +406,7 @@ export default function App() {
         const el = {
           id: uid(), type: "image", src: ev.target.result,
           x: (canvasW - w) / 2, y: (canvasH - h) / 2, width: w, height: h, rotation: 0,
+          keepAspectRatio: true,
         };
         updateElements((prev) => [...prev, el]);
         setSelectedId(el.id);
@@ -230,7 +432,7 @@ export default function App() {
   // ---------- pointer logic on canvas ----------
   function getCanvasPoint(e) {
     const rect = canvasRef.current.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
   }
 
   function onCanvasPointerDown(e) {
@@ -239,6 +441,27 @@ export default function App() {
 
     if (tool === "select") {
       setSelectedId("__canvas__");
+      return;
+    }
+
+    if (tool === "pan") {
+      const container = canvasContainerRef.current;
+      if (!container) return;
+      panRef.current = { startX: e.clientX, startY: e.clientY, scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
+      const onMove = (ev) => {
+        if (!panRef.current) return;
+        const dx = ev.clientX - panRef.current.startX;
+        const dy = ev.clientY - panRef.current.startY;
+        container.scrollLeft = panRef.current.scrollLeft - dx;
+        container.scrollTop = panRef.current.scrollTop - dy;
+      };
+      const onUp = () => {
+        panRef.current = null;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
       return;
     }
 
@@ -310,10 +533,23 @@ export default function App() {
       updateElements((prev) => prev.map((el) => {
         if (el.id !== drag.id) return el;
         let { x, y, width, height } = { x: drag.origX, y: drag.origY, width: drag.origW, height: drag.origH };
-        if (drag.handle.includes("e")) width = Math.max(8, drag.origW + dx);
-        if (drag.handle.includes("s")) height = Math.max(8, drag.origH + dy);
-        if (drag.handle.includes("w")) { width = Math.max(8, drag.origW - dx); x = drag.origX + (drag.origW - width); }
-        if (drag.handle.includes("n")) { height = Math.max(8, drag.origH - dy); y = drag.origY + (drag.origH - height); }
+        if (el.keepAspectRatio && (el.type === "image")) {
+          const aspect = drag.origW / drag.origH;
+          if (drag.handle.includes("e") || drag.handle.includes("w")) {
+            width = Math.max(8, drag.origW + (drag.handle.includes("w") ? -dx : dx));
+            height = Math.round(width / aspect);
+            if (drag.handle.includes("w")) { x = drag.origX + (drag.origW - width); }
+          } else {
+            height = Math.max(8, drag.origH + (drag.handle.includes("n") ? -dy : dy));
+            width = Math.round(height * aspect);
+            if (drag.handle.includes("n")) { y = drag.origY + (drag.origH - height); }
+          }
+        } else {
+          if (drag.handle.includes("e")) width = Math.max(8, drag.origW + dx);
+          if (drag.handle.includes("s")) height = Math.max(8, drag.origH + dy);
+          if (drag.handle.includes("w")) { width = Math.max(8, drag.origW - dx); x = drag.origX + (drag.origW - width); }
+          if (drag.handle.includes("n")) { height = Math.max(8, drag.origH - dy); y = drag.origY + (drag.origH - height); }
+        }
         return { ...el, x, y, width, height };
       }), false);
     } else if (drag.mode === "rotate") {
@@ -381,6 +617,37 @@ export default function App() {
     window.addEventListener("pointerup", onWindowPointerUp);
   }
 
+  // ---------- wheel zoom on canvas (non-passive listener so preventDefault works) ----------
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+    const onWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        setZoom((z) => clamp(z + delta, 0.1, 5));
+      }
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // ---------- click outside to close popovers ----------
+  useEffect(() => {
+    function onDown(e) {
+      if (imagePopoverRef.current && !imagePopoverRef.current.contains(e.target)) {
+        setShowImagePopover(false);
+      }
+      if (bgImagePopoverRef.current && !bgImagePopoverRef.current.contains(e.target)) {
+        setShowBgImagePopover(false);
+      }
+    }
+    if (showImagePopover || showBgImagePopover) {
+      window.addEventListener("pointerdown", onDown);
+      return () => window.removeEventListener("pointerdown", onDown);
+    }
+  }, [showImagePopover, showBgImagePopover]);
+
   // ---------- actions ----------
   function deleteSelected() {
     if (!selectedId || selectedId === "__canvas__") return;
@@ -442,19 +709,18 @@ export default function App() {
   });
 
   function buildExportCanvas() {
-    const canvasEl = canvasRef.current;
-    const rect = canvasEl.getBoundingClientRect();
     const svgNS = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgNS, "svg");
-    svg.setAttribute("width", rect.width);
-    svg.setAttribute("height", rect.height);
+    svg.setAttribute("width", canvasW);
+    svg.setAttribute("height", canvasH);
     svg.setAttribute("xmlns", svgNS);
 
     if (bgImage) {
       const img = document.createElementNS(svgNS, "image");
       img.setAttributeNS("http://www.w3.org/1999/xlink", "href", bgImage.src);
       img.setAttribute("x", 0); img.setAttribute("y", 0);
-      img.setAttribute("width", rect.width); img.setAttribute("height", rect.height);
+      img.setAttribute("width", canvasW); img.setAttribute("height", canvasH);
+      img.setAttribute("preserveAspectRatio", "xMinYMin slice");
       svg.appendChild(img);
     }
     elements.forEach((el) => {
@@ -559,7 +825,7 @@ export default function App() {
       const tmpImg = new window.Image();
       tmpImg.onload = () => {
         const canvasOut = document.createElement("canvas");
-        canvasOut.width = rect.width; canvasOut.height = rect.height;
+        canvasOut.width = canvasW; canvasOut.height = canvasH;
         const ctx = canvasOut.getContext("2d");
         ctx.drawImage(tmpImg, 0, 0);
         URL.revokeObjectURL(url);
@@ -622,14 +888,86 @@ export default function App() {
           );
         })}
         <div style={{ width: 32, height: 1, background: "#262a33", margin: "10px 0" }} />
-        <label title="Set background image" style={{ width: 46, height: 46, borderRadius: 10, background: "transparent", color: "#9ca3af", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <ImageIcon size={20} />
-          <input type="file" accept="image/*" onChange={handleUpload} style={{ display: "none" }} />
-        </label>
-        <label title="Add image overlay" style={{ width: 46, height: 46, borderRadius: 10, background: "transparent", color: "#9ca3af", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <ImagePlus size={20} />
-          <input type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: "none" }} />
-        </label>
+        <div ref={bgImagePopoverRef} style={{ position: "relative" }}>
+          <button title="Set background image" onClick={() => setShowBgImagePopover((p) => !p)}
+            style={{
+              width: 46, height: 46, borderRadius: 10, border: "none", cursor: "pointer",
+              background: showBgImagePopover ? "#3b82f6" : "transparent",
+              color: showBgImagePopover ? "#fff" : "#9ca3af",
+              display: "flex", alignItems: "center", justifyContent: "center", transition: "background .15s",
+            }}>
+            <ImageIcon size={20} />
+          </button>
+          {showBgImagePopover && (
+            <div style={{
+              position: "absolute", left: 56, top: 0, background: "#181b21",
+              border: "1px solid #262a33", borderRadius: 10, padding: 6,
+              boxShadow: "0 8px 24px rgba(0,0,0,.5)", zIndex: 100, minWidth: 160,
+            }}>
+              <button onClick={() => { bgFileInputRef.current?.click(); setShowBgImagePopover(false); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, width: "100%",
+                  padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
+                  color: "#e5e7eb", cursor: "pointer", fontSize: 13,
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#262a33"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                <ImageIcon size={16} /> From file
+              </button>
+              <button onClick={() => startScreenshot("background")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, width: "100%",
+                  padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
+                  color: "#e5e7eb", cursor: "pointer", fontSize: 13,
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#262a33"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                <Camera size={16} /> Take screenshot
+              </button>
+            </div>
+          )}
+          <input ref={bgFileInputRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: "none" }} />
+        </div>
+        <div ref={imagePopoverRef} style={{ position: "relative" }}>
+          <button title="Add image overlay" onClick={() => setShowImagePopover((p) => !p)}
+            style={{
+              width: 46, height: 46, borderRadius: 10, border: "none", cursor: "pointer",
+              background: showImagePopover ? "#3b82f6" : "transparent",
+              color: showImagePopover ? "#fff" : "#9ca3af",
+              display: "flex", alignItems: "center", justifyContent: "center", transition: "background .15s",
+            }}>
+            <ImagePlus size={20} />
+          </button>
+          {showImagePopover && (
+            <div style={{
+              position: "absolute", left: 56, top: 0, background: "#181b21",
+              border: "1px solid #262a33", borderRadius: 10, padding: 6,
+              boxShadow: "0 8px 24px rgba(0,0,0,.5)", zIndex: 100, minWidth: 160,
+            }}>
+              <button onClick={() => { overlayFileInputRef.current?.click(); setShowImagePopover(false); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, width: "100%",
+                  padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
+                  color: "#e5e7eb", cursor: "pointer", fontSize: 13,
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#262a33"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                <ImagePlus size={16} /> From file
+              </button>
+              <button onClick={() => startScreenshot("overlay")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, width: "100%",
+                  padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
+                  color: "#e5e7eb", cursor: "pointer", fontSize: 13,
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#262a33"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                <Camera size={16} /> Take screenshot
+              </button>
+            </div>
+          )}
+          <input ref={overlayFileInputRef} type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: "none" }} />
+        </div>
         <button title="Ctrl/Cmd+V pastes: sets background if empty, otherwise adds an overlay image" onClick={() => { }} style={{ width: 46, height: 46, borderRadius: 10, border: "none", background: "transparent", color: "#9ca3af", display: "flex", alignItems: "center", justifyContent: "center", cursor: "default" }}>
           <ClipboardPaste size={20} />
         </button>
@@ -648,6 +986,18 @@ export default function App() {
                 background: c, cursor: "pointer",
               }} />
           ))}
+          <div style={{ width: 1, height: 24, background: "#262a33" }} />
+          <label
+            style={{
+              width: 22, height: 22, borderRadius: "50%",
+              border: "1px solid #3a3f4a", background: color,
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20, color: "#fff",
+            }}
+            title="Pick custom color">
+            <input type="color" value={color} onChange={(e) => changeSelectedColor(e.target.value)}
+              style={{ width: 0, height: 0, border: "none", padding: 0, opacity: 0, position: "absolute" }} />
+          </label>
           <input type="range" min={1} max={16} value={strokeWidth}
             onChange={(e) => {
               const v = Number(e.target.value);
@@ -661,6 +1011,17 @@ export default function App() {
           <button onClick={duplicateSelected} disabled={!selectedId || selectedId === "__canvas__"} style={iconBtnStyle(!selectedId || selectedId === "__canvas__")} title="Duplicate"><Copy size={18} /></button>
           <button onClick={deleteSelected} disabled={!selectedId || selectedId === "__canvas__"} style={iconBtnStyle(!selectedId || selectedId === "__canvas__")} title="Delete"><Trash2 size={18} /></button>
           <div style={{ flex: 1 }} />
+          <div style={{ width: 1, height: 24, background: "#262a33" }} />
+          <button onClick={() => setZoom((z) => clamp(z - 0.1, 0.1, 5))} style={iconBtnStyle(false)} title="Zoom out">
+            <ZoomOut size={18} />
+          </button>
+          <span style={{ fontSize: 12, color: "#9ca3af", minWidth: 44, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom((z) => clamp(z + 0.1, 0.1, 5))} style={iconBtnStyle(false)} title="Zoom in">
+            <ZoomIn size={18} />
+          </button>
+          <button onClick={() => setZoom(1)} style={{ ...iconBtnStyle(false), fontSize: 11, padding: "0 8px", width: "auto" }} title="Reset zoom">
+            Fit
+          </button>
           <button onClick={copyAsImage} style={{ ...iconBtnStyle(false), display: "flex", gap: 6, alignItems: "center", padding: "0 12px", width: "auto" }} title="Copy canvas to clipboard">
             <ClipboardCheck size={16} />
             {copyStatus === "copied" ? "Copied!" : copyStatus === "failed" ? "Copy failed" : "Copy image"}
@@ -671,18 +1032,43 @@ export default function App() {
         </div>
 
         {/* Canvas area */}
-        <div style={{ flex: 1, overflow: "auto", display: "flex", alignItems: "flex-start", padding: 32, background: "#1c1f26", position: "relative" }}>
+        <div ref={canvasContainerRef}
+          onPointerDown={(e) => {
+            // Middle-button pan
+            if (e.button === 1) {
+              e.preventDefault();
+              const container = canvasContainerRef.current;
+              panRef.current = { startX: e.clientX, startY: e.clientY, scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
+              const onMove = (ev) => {
+                if (!panRef.current) return;
+                const dx = ev.clientX - panRef.current.startX;
+                const dy = ev.clientY - panRef.current.startY;
+                container.scrollLeft = panRef.current.scrollLeft - dx;
+                container.scrollTop = panRef.current.scrollTop - dy;
+              };
+              const onUp = () => {
+                panRef.current = null;
+                window.removeEventListener("pointermove", onMove);
+                window.removeEventListener("pointerup", onUp);
+              };
+              window.addEventListener("pointermove", onMove);
+              window.addEventListener("pointerup", onUp);
+            }
+          }}
+          style={{ flex: 1, overflow: "auto", display: "flex", alignItems: "flex-start", padding: 32, background: "#1c1f26", position: "relative" }}>
           <div
             ref={canvasRef}
             onPointerDown={onCanvasPointerDown}
             style={{
               position: "relative", width: canvasW, height: canvasH,
+              transform: `scale(${zoom})`, transformOrigin: "0 0",
               background: bgImage ? `url(${bgImage.src})` : canvasColor,
-              backgroundSize: "100% 100%",
+              backgroundSize: bgImage ? "cover" : "100% 100%",
+              backgroundPosition: "0 0",
               boxShadow: selectedId === "__canvas__"
                 ? "0 0 0 2px #3b82f6, 0 10px 30px rgba(0,0,0,.4)"
                 : "0 0 0 1px #2c313b, 0 10px 30px rgba(0,0,0,.4)",
-              borderRadius: 4, cursor: tool === "select" ? "default" : "crosshair", flexShrink: 0,
+              borderRadius: 4, cursor: tool === "select" ? "default" : tool === "pan" ? "grab" : "crosshair", flexShrink: 0,
             }}
           >
             {!bgImage && elements.length === 0 && (
@@ -802,11 +1188,98 @@ export default function App() {
         ) : selectedEl ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Row label="Type" value={selectedEl.type} />
-            <Row label="X" value={Math.round(selectedEl.x)} />
-            <Row label="Y" value={Math.round(selectedEl.y)} />
-            <Row label="Width" value={Math.round(selectedEl.width)} />
-            <Row label="Height" value={Math.round(selectedEl.height)} />
-            <Row label="Rotation" value={`${Math.round(selectedEl.rotation || 0)}°`} />
+            <div>
+              <div style={{ color: "#6b7280", marginBottom: 4 }}>X</div>
+              <input type="number" value={Math.round(selectedEl.x)}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, x: v } : p));
+                }}
+                style={selectStyle} />
+            </div>
+            <div>
+              <div style={{ color: "#6b7280", marginBottom: 4 }}>Y</div>
+              <input type="number" value={Math.round(selectedEl.y)}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, y: v } : p));
+                }}
+                style={selectStyle} />
+            </div>
+            <div>
+              <div style={{ color: "#6b7280", marginBottom: 4 }}>Width</div>
+              <input type="number" min={1} value={Math.round(selectedEl.width)}
+                onChange={(e) => {
+                  const v = Math.max(1, Number(e.target.value));
+                  if (selectedEl.keepAspectRatio && selectedEl.type === "image") {
+                    const aspect = selectedEl.width / selectedEl.height;
+                    updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, width: v, height: Math.round(v / aspect) } : p));
+                  } else {
+                    updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, width: v } : p));
+                  }
+                }}
+                style={selectStyle} />
+            </div>
+            <div>
+              <div style={{ color: "#6b7280", marginBottom: 4 }}>Height</div>
+              <input type="number" min={1} value={Math.round(selectedEl.height)}
+                onChange={(e) => {
+                  const v = Math.max(1, Number(e.target.value));
+                  if (selectedEl.keepAspectRatio && selectedEl.type === "image") {
+                    const aspect = selectedEl.width / selectedEl.height;
+                    updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, height: v, width: Math.round(v * aspect) } : p));
+                  } else {
+                    updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, height: v } : p));
+                  }
+                }}
+                style={selectStyle} />
+            </div>
+            <div>
+              <div style={{ color: "#6b7280", marginBottom: 4 }}>Rotation</div>
+              <input type="number" value={Math.round(selectedEl.rotation || 0)}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, rotation: v } : p));
+                }}
+                style={selectStyle} />
+            </div>
+            {(["rect", "ellipse", "triangle"].includes(selectedEl.type)) && (
+              <div>
+                <div style={{ color: "#6b7280", marginBottom: 4 }}>Fill color</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input type="color"
+                    value={selectedEl.fill && selectedEl.fill !== "transparent" ? selectedEl.fill : "#000000"}
+                    onChange={(e) => {
+                      updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, fill: e.target.value } : p));
+                    }}
+                    style={{ flex: 1, height: 32, border: "1px solid #2c313b", borderRadius: 6, cursor: "pointer", background: "none", padding: 2 }} />
+                  <button onClick={() => {
+                    const isFilled = selectedEl.fill && selectedEl.fill !== "transparent";
+                    updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, fill: isFilled ? "transparent" : "#ef4444" } : p));
+                  }}
+                    style={{
+                      padding: "4px 10px", borderRadius: 6, border: "1px solid #2c313b",
+                      background: "transparent", color: "#9ca3af", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap",
+                    }}>
+                    {selectedEl.fill && selectedEl.fill !== "transparent" ? "No fill" : "Fill"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {selectedEl.type === "image" && (
+              <div>
+                <div style={{ color: "#6b7280", marginBottom: 4 }}>Keep aspect ratio</div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "#e5e7eb", fontSize: 13 }}>
+                  <input type="checkbox" checked={selectedEl.keepAspectRatio !== false}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, keepAspectRatio: v } : p));
+                    }}
+                    style={{ accentColor: "#3b82f6", width: 16, height: 16 }} />
+                  Lock aspect ratio
+                </label>
+              </div>
+            )}
             {selectedEl.type === "text" && (
               <div>
                 <div style={{ color: "#6b7280", marginBottom: 4 }}>Font size</div>
@@ -855,6 +1328,88 @@ export default function App() {
             <br />Ctrl/Cmd+D – duplicate
             <br />Ctrl/Cmd+Z – undo
             <br />Ctrl/Cmd+Shift+Z – redo
+          </div>
+        )}
+
+        {/* Crop modal for screenshot */}
+        {isCropping && screenshotData && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.7)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{
+              background: "#1c1f26", borderRadius: 12, padding: 20,
+              boxShadow: "0 20px 60px rgba(0,0,0,.6)", maxWidth: "90vw", maxHeight: "90vh",
+              display: "flex", flexDirection: "column", gap: 12,
+            }}>
+              <div style={{ color: "#9ca3af", fontSize: 13 }}>
+                Drag to select the area you want to keep, then click <strong>Save</strong>.
+              </div>
+              <div style={{
+                position: "relative", overflow: "hidden", cursor: "crosshair",
+                maxWidth: "80vw", maxHeight: "65vh",
+              }} onPointerDown={onCropPointerDown}>
+                <img id="crop-image" src={screenshotData.src} draggable={false} alt="Screenshot"
+                  style={{ display: "block", maxWidth: "80vw", maxHeight: "65vh", objectFit: "contain", userSelect: "none" }} />
+                {cropRect && cropRect.w > 0 && cropRect.h > 0 && (
+                  <>
+                    {/* Dark overlay areas */}
+                    <div style={{
+                      position: "absolute", left: 0, top: 0, width: "100%", height: cropRect.y,
+                      background: "rgba(0,0,0,.5)", pointerEvents: "none",
+                    }} />
+                    <div style={{
+                      position: "absolute", left: 0, top: cropRect.y + cropRect.h, width: "100%",
+                      height: `calc(100% - ${cropRect.y + cropRect.h}px)`,
+                      background: "rgba(0,0,0,.5)", pointerEvents: "none",
+                    }} />
+                    <div style={{
+                      position: "absolute", left: 0, top: cropRect.y, width: cropRect.x, height: cropRect.h,
+                      background: "rgba(0,0,0,.5)", pointerEvents: "none",
+                    }} />
+                    <div style={{
+                      position: "absolute", left: cropRect.x + cropRect.w, top: cropRect.y,
+                      width: `calc(100% - ${cropRect.x + cropRect.w}px)`, height: cropRect.h,
+                      background: "rgba(0,0,0,.5)", pointerEvents: "none",
+                    }} />
+                    {/* Selection border */}
+                    <div style={{
+                      position: "absolute", left: cropRect.x, top: cropRect.y, width: cropRect.w, height: cropRect.h,
+                      border: "2px dashed #fff", pointerEvents: "none", boxSizing: "border-box",
+                    }} />
+                    {/* Corner handles */}
+                    <div style={{
+                      position: "absolute", left: cropRect.x - 4, top: cropRect.y - 4, width: 8, height: 8,
+                      background: "#fff", borderRadius: "50%", border: "2px solid #3b82f6", pointerEvents: "none",
+                    }} />
+                    <div style={{
+                      position: "absolute", left: cropRect.x + cropRect.w - 4, top: cropRect.y - 4, width: 8, height: 8,
+                      background: "#fff", borderRadius: "50%", border: "2px solid #3b82f6", pointerEvents: "none",
+                    }} />
+                    <div style={{
+                      position: "absolute", left: cropRect.x - 4, top: cropRect.y + cropRect.h - 4, width: 8, height: 8,
+                      background: "#fff", borderRadius: "50%", border: "2px solid #3b82f6", pointerEvents: "none",
+                    }} />
+                    <div style={{
+                      position: "absolute", left: cropRect.x + cropRect.w - 4, top: cropRect.y + cropRect.h - 4, width: 8, height: 8,
+                      background: "#fff", borderRadius: "50%", border: "2px solid #3b82f6", pointerEvents: "none",
+                    }} />
+                  </>
+                )}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button onClick={cancelScreenshot}
+                  style={{
+                    padding: "8px 20px", borderRadius: 8, border: "1px solid #2c313b",
+                    background: "transparent", color: "#9ca3af", cursor: "pointer", fontSize: 13,
+                  }}>Cancel</button>
+                <button onClick={saveScreenshot}
+                  style={{
+                    padding: "8px 20px", borderRadius: 8, border: "none",
+                    background: "#3b82f6", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  }}>Save</button>
+              </div>
+            </div>
           </div>
         )}
       </div>
