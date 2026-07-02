@@ -870,9 +870,9 @@ export default function App() {
   const canvasH = canvasSize.height;
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100%", background: "#1c1f26", fontFamily: "Inter, system-ui, sans-serif", color: "#e5e7eb" }}>
+    <div style={{ display: "flex", height: "100vh", width: "100%", background: "#f3f4f6", fontFamily: "Inter, system-ui, sans-serif", color: "#1f2937" }}>
       {/* Sidebar */}
-      <div style={{ width: 72, background: "#14161b", borderRight: "1px solid #262a33", display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 0", gap: 6 }}>
+      <div style={{ width: 72, background: "#ffffff", borderRight: "1px solid #e5e7eb", display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 0", gap: 6 }}>
         {TOOLS.map((t) => {
           const Icon = t.icon;
           const active = tool === t.id;
@@ -880,37 +880,37 @@ export default function App() {
             <button key={t.id} title={t.label} onClick={() => setTool(t.id)}
               style={{
                 width: 46, height: 46, borderRadius: 10, border: "none", cursor: "pointer",
-                background: active ? "#3b82f6" : "transparent", color: active ? "#fff" : "#9ca3af",
+                background: active ? "#3b82f6" : "transparent", color: active ? "#fff" : "#6b7280",
                 display: "flex", alignItems: "center", justifyContent: "center", transition: "background .15s",
               }}>
               <Icon size={20} />
             </button>
           );
         })}
-        <div style={{ width: 32, height: 1, background: "#262a33", margin: "10px 0" }} />
+        <div style={{ width: 32, height: 1, background: "#e5e7eb", margin: "10px 0" }} />
         <div ref={bgImagePopoverRef} style={{ position: "relative" }}>
           <button title="Set background image" onClick={() => setShowBgImagePopover((p) => !p)}
             style={{
               width: 46, height: 46, borderRadius: 10, border: "none", cursor: "pointer",
               background: showBgImagePopover ? "#3b82f6" : "transparent",
-              color: showBgImagePopover ? "#fff" : "#9ca3af",
+              color: showBgImagePopover ? "#fff" : "#6b7280",
               display: "flex", alignItems: "center", justifyContent: "center", transition: "background .15s",
             }}>
             <ImageIcon size={20} />
           </button>
           {showBgImagePopover && (
             <div style={{
-              position: "absolute", left: 56, top: 0, background: "#181b21",
-              border: "1px solid #262a33", borderRadius: 10, padding: 6,
-              boxShadow: "0 8px 24px rgba(0,0,0,.5)", zIndex: 100, minWidth: 160,
+              position: "absolute", left: 56, top: 0, background: "#ffffff",
+              border: "1px solid #e5e7eb", borderRadius: 10, padding: 6,
+              boxShadow: "0 8px 24px rgba(0,0,0,.1)", zIndex: 100, minWidth: 160,
             }}>
               <button onClick={() => { bgFileInputRef.current?.click(); setShowBgImagePopover(false); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 10, width: "100%",
                   padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
-                  color: "#e5e7eb", cursor: "pointer", fontSize: 13,
+                  color: "#1f2937", cursor: "pointer", fontSize: 13,
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "#262a33"}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#f3f4f6"}
                 onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                 <ImageIcon size={16} /> From file
               </button>
@@ -918,9 +918,9 @@ export default function App() {
                 style={{
                   display: "flex", alignItems: "center", gap: 10, width: "100%",
                   padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
-                  color: "#e5e7eb", cursor: "pointer", fontSize: 13,
+                  color: "#1f2937", cursor: "pointer", fontSize: 13,
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "#262a33"}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#f3f4f6"}
                 onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                 <Camera size={16} /> Take screenshot
               </button>
@@ -933,24 +933,24 @@ export default function App() {
             style={{
               width: 46, height: 46, borderRadius: 10, border: "none", cursor: "pointer",
               background: showImagePopover ? "#3b82f6" : "transparent",
-              color: showImagePopover ? "#fff" : "#9ca3af",
+              color: showImagePopover ? "#fff" : "#6b7280",
               display: "flex", alignItems: "center", justifyContent: "center", transition: "background .15s",
             }}>
             <ImagePlus size={20} />
           </button>
           {showImagePopover && (
             <div style={{
-              position: "absolute", left: 56, top: 0, background: "#181b21",
-              border: "1px solid #262a33", borderRadius: 10, padding: 6,
-              boxShadow: "0 8px 24px rgba(0,0,0,.5)", zIndex: 100, minWidth: 160,
+              position: "absolute", left: 56, top: 0, background: "#ffffff",
+              border: "1px solid #e5e7eb", borderRadius: 10, padding: 6,
+              boxShadow: "0 8px 24px rgba(0,0,0,.1)", zIndex: 100, minWidth: 160,
             }}>
               <button onClick={() => { overlayFileInputRef.current?.click(); setShowImagePopover(false); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 10, width: "100%",
                   padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
-                  color: "#e5e7eb", cursor: "pointer", fontSize: 13,
+                  color: "#1f2937", cursor: "pointer", fontSize: 13,
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "#262a33"}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#f3f4f6"}
                 onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                 <ImagePlus size={16} /> From file
               </button>
@@ -958,9 +958,9 @@ export default function App() {
                 style={{
                   display: "flex", alignItems: "center", gap: 10, width: "100%",
                   padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
-                  color: "#e5e7eb", cursor: "pointer", fontSize: 13,
+                  color: "#1f2937", cursor: "pointer", fontSize: 13,
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "#262a33"}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#f3f4f6"}
                 onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                 <Camera size={16} /> Take screenshot
               </button>
@@ -968,7 +968,7 @@ export default function App() {
           )}
           <input ref={overlayFileInputRef} type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: "none" }} />
         </div>
-        <button title="Ctrl/Cmd+V pastes: sets background if empty, otherwise adds an overlay image" onClick={() => { }} style={{ width: 46, height: 46, borderRadius: 10, border: "none", background: "transparent", color: "#9ca3af", display: "flex", alignItems: "center", justifyContent: "center", cursor: "default" }}>
+        <button title="Ctrl/Cmd+V pastes: sets background if empty, otherwise adds an overlay image" onClick={() => { }} style={{ width: 46, height: 46, borderRadius: 10, border: "none", background: "transparent", color: "#6b7280", display: "flex", alignItems: "center", justifyContent: "center", cursor: "default" }}>
           <ClipboardPaste size={20} />
         </button>
       </div>
@@ -976,21 +976,21 @@ export default function App() {
       {/* Main */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
         {/* Top toolbar */}
-        <div style={{ height: 56, background: "#181b21", borderBottom: "1px solid #262a33", display: "flex", alignItems: "center", padding: "0 16px", gap: 10 }}>
-          <strong style={{ fontSize: 22, letterSpacing: 0.3, marginRight: 8 }}>Image&nbsp;Labeling</strong>
-          <div style={{ width: 1, height: 24, background: "#262a33" }} />
+        <div style={{ height: 56, background: "#ffffff", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", padding: "0 16px", gap: 10 }}>
+          <strong style={{ fontSize: 22, letterSpacing: 0.3, marginRight: 8, color: "#1f2937" }}>Image&nbsp;Labeling</strong>
+          <div style={{ width: 1, height: 24, background: "#e5e7eb" }} />
           {COLORS.map((c) => (
             <button key={c} onClick={() => changeSelectedColor(c)}
               style={{
-                width: 22, height: 22, borderRadius: "50%", border: color === c ? "2px solid #fff" : "1px solid #3a3f4a",
+                width: 22, height: 22, borderRadius: "50%", border: color === c ? "2px solid #1f2937" : "1px solid #d1d5db",
                 background: c, cursor: "pointer",
               }} />
           ))}
-          <div style={{ width: 1, height: 24, background: "#262a33" }} />
+          <div style={{ width: 1, height: 24, background: "#e5e7eb" }} />
           <label
             style={{
               width: 22, height: 22, borderRadius: "50%",
-              border: "1px solid #3a3f4a", background: color,
+              border: "1px solid #d1d5db", background: color,
               cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 20, color: "#fff",
             }}
@@ -998,24 +998,26 @@ export default function App() {
             <input type="color" value={color} onChange={(e) => changeSelectedColor(e.target.value)}
               style={{ width: 0, height: 0, border: "none", padding: 0, opacity: 0, position: "absolute" }} />
           </label>
-          <input type="range" min={1} max={16} value={strokeWidth}
+          <div style={{ width: 1, height: 24, background: "#e5e7eb" }} />
+          <input type="range" min={1} max={32} value={strokeWidth}
             onChange={(e) => {
               const v = Number(e.target.value);
               setStrokeWidth(v);
               if (selectedId && selectedId !== "__canvas__") updateElements((prev) => prev.map((el) => el.id === selectedId ? { ...el, strokeWidth: v } : el));
             }}
             style={{ width: 90 }} title="Stroke width" />
-          <div style={{ width: 1, height: 24, background: "#262a33" }} />
+          <span style={{ fontSize: 12, color: "#6b7280", minWidth: 20, textAlign: "center" }}>{strokeWidth}px</span>
+          <div style={{ width: 1, height: 24, background: "#e5e7eb" }} />
           <button onClick={undo} disabled={!history.length} style={iconBtnStyle(!history.length)} title="Undo"><Undo2 size={18} /></button>
           <button onClick={redo} disabled={!future.length} style={iconBtnStyle(!future.length)} title="Redo"><Redo2 size={18} /></button>
           <button onClick={duplicateSelected} disabled={!selectedId || selectedId === "__canvas__"} style={iconBtnStyle(!selectedId || selectedId === "__canvas__")} title="Duplicate"><Copy size={18} /></button>
           <button onClick={deleteSelected} disabled={!selectedId || selectedId === "__canvas__"} style={iconBtnStyle(!selectedId || selectedId === "__canvas__")} title="Delete"><Trash2 size={18} /></button>
           <div style={{ flex: 1 }} />
-          <div style={{ width: 1, height: 24, background: "#262a33" }} />
+          <div style={{ width: 1, height: 24, background: "#e5e7eb" }} />
           <button onClick={() => setZoom((z) => clamp(z - 0.1, 0.1, 5))} style={iconBtnStyle(false)} title="Zoom out">
             <ZoomOut size={18} />
           </button>
-          <span style={{ fontSize: 12, color: "#9ca3af", minWidth: 44, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
+          <span style={{ fontSize: 12, color: "#6b7280", minWidth: 44, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
           <button onClick={() => setZoom((z) => clamp(z + 0.1, 0.1, 5))} style={iconBtnStyle(false)} title="Zoom in">
             <ZoomIn size={18} />
           </button>
@@ -1055,7 +1057,7 @@ export default function App() {
               window.addEventListener("pointerup", onUp);
             }
           }}
-          style={{ flex: 1, overflow: "auto", display: "flex", alignItems: "flex-start", padding: 32, background: "#1c1f26", position: "relative" }}>
+          style={{ flex: 1, overflow: "auto", display: "flex", alignItems: "flex-start", padding: 32, background: "#f3f4f6", position: "relative" }}>
           <div
             ref={canvasRef}
             onPointerDown={onCanvasPointerDown}
@@ -1066,13 +1068,13 @@ export default function App() {
               backgroundSize: bgImage ? "cover" : "100% 100%",
               backgroundPosition: "0 0",
               boxShadow: selectedId === "__canvas__"
-                ? "0 0 0 2px #3b82f6, 0 10px 30px rgba(0,0,0,.4)"
-                : "0 0 0 1px #2c313b, 0 10px 30px rgba(0,0,0,.4)",
+                ? "0 0 0 2px #3b82f6, 0 10px 30px rgba(0,0,0,.1)"
+                : "0 0 0 1px #d1d5db, 0 10px 30px rgba(0,0,0,.1)",
               borderRadius: 4, cursor: tool === "select" ? "default" : tool === "pan" ? "grab" : "crosshair", flexShrink: 0,
             }}
           >
             {!bgImage && elements.length === 0 && (
-              <div style={{ position: "absolute", color: "#6b7280", fontSize: 14, textAlign: "center", bottom: 50, width: "100%" }}>
+              <div style={{ position: "absolute", color: "#9ca3af", fontSize: 14, textAlign: "center", bottom: 50, width: "100%" }}>
                 Paste an image with <kbd style={kbdStyle}>Ctrl/Cmd+V</kbd> or upload one from the sidebar to start.
                 <br />You can still draw shapes on a blank canvas below.
               </div>
@@ -1151,8 +1153,8 @@ export default function App() {
       </div>
 
       {/* Right inspector */}
-      <div style={{ width: 300, minWidth: 300, background: "#14161b", borderLeft: "1px solid #262a33", padding: 16, fontSize: 13, boxSizing: "border-box" }}>
-        <div style={{ color: "#9ca3af", textTransform: "uppercase", fontSize: 11, letterSpacing: 0.6, marginBottom: 10 }}>Inspector</div>
+      <div style={{ width: 300, minWidth: 300, background: "#ffffff", borderLeft: "1px solid #e5e7eb", padding: 16, fontSize: 13, boxSizing: "border-box" }}>
+        <div style={{ color: "#6b7280", textTransform: "uppercase", fontSize: 11, letterSpacing: 0.6, marginBottom: 10 }}>Inspector</div>
         {selectedId === "__canvas__" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Row label="Type" value="canvas" />
@@ -1172,12 +1174,12 @@ export default function App() {
               <div>
                 <div style={{ color: "#6b7280", marginBottom: 4 }}>Canvas color</div>
                 <input type="color" value={canvasColor} onChange={(e) => setCanvasColor(e.target.value)}
-                  style={{ width: "100%", height: 32, border: "1px solid #2c313b", borderRadius: 6, cursor: "pointer", background: "none", padding: 2 }} />
+                  style={{ width: "100%", height: 32, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer", background: "none", padding: 2 }} />
               </div>
             )}
             {bgImage && (
               <button onClick={clearBackgroundImage}
-                style={{ ...selectStyle, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#fca5a5", border: "1px solid #3a2030" }}>
+                style={{ ...selectStyle, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#dc2626", border: "1px solid #fecaca" }}>
                 <Trash2 size={14} /> Remove background image
               </button>
             )}
@@ -1243,6 +1245,30 @@ export default function App() {
                 }}
                 style={selectStyle} />
             </div>
+            {(["rect", "ellipse", "triangle", "line", "arrow", "pen"].includes(selectedEl.type)) && (
+              <>
+                <div>
+                  <div style={{ color: "#6b7280", marginBottom: 4 }}>Stroke width</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="range" min={1} max={16} value={selectedEl.strokeWidth}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, strokeWidth: v } : p));
+                      }}
+                      style={{ width: "100%" }} />
+                    <span style={{ fontSize: 12, color: "#6b7280", minWidth: 20, textAlign: "center" }}>{selectedEl.strokeWidth}px</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280", marginBottom: 4 }}>Stroke color</div>
+                  <input type="color" value={selectedEl.stroke}
+                    onChange={(e) => {
+                      updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, stroke: e.target.value } : p));
+                    }}
+                    style={{ width: "100%", height: 32, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer", background: "none", padding: 2 }} />
+                </div>
+              </>
+            )}
             {(["rect", "ellipse", "triangle"].includes(selectedEl.type)) && (
               <div>
                 <div style={{ color: "#6b7280", marginBottom: 4 }}>Fill color</div>
@@ -1252,14 +1278,14 @@ export default function App() {
                     onChange={(e) => {
                       updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, fill: e.target.value } : p));
                     }}
-                    style={{ flex: 1, height: 32, border: "1px solid #2c313b", borderRadius: 6, cursor: "pointer", background: "none", padding: 2 }} />
+                    style={{ flex: 1, height: 32, border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer", background: "none", padding: 2 }} />
                   <button onClick={() => {
                     const isFilled = selectedEl.fill && selectedEl.fill !== "transparent";
                     updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, fill: isFilled ? "transparent" : "#ef4444" } : p));
                   }}
                     style={{
-                      padding: "4px 10px", borderRadius: 6, border: "1px solid #2c313b",
-                      background: "transparent", color: "#9ca3af", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap",
+                      padding: "4px 10px", borderRadius: 6, border: "1px solid #d1d5db",
+                      background: "transparent", color: "#6b7280", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap",
                     }}>
                     {selectedEl.fill && selectedEl.fill !== "transparent" ? "No fill" : "Fill"}
                   </button>
@@ -1269,7 +1295,7 @@ export default function App() {
             {selectedEl.type === "image" && (
               <div>
                 <div style={{ color: "#6b7280", marginBottom: 4 }}>Keep aspect ratio</div>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "#e5e7eb", fontSize: 13 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "#1f2937", fontSize: 13 }}>
                   <input type="checkbox" checked={selectedEl.keepAspectRatio !== false}
                     onChange={(e) => {
                       const v = e.target.checked;
@@ -1323,7 +1349,7 @@ export default function App() {
           <div style={{ color: "#6b7280", lineHeight: 1.5 }}>
             Select an element to see and edit its properties.
             <br /><br />
-            <strong style={{ color: "#9ca3af" }}>Shortcuts</strong>
+            <strong style={{ color: "#6b7280" }}>Shortcuts</strong>
             <br />Delete – remove
             <br />Ctrl/Cmd+D – duplicate
             <br />Ctrl/Cmd+Z – undo
@@ -1334,15 +1360,15 @@ export default function App() {
         {/* Crop modal for screenshot */}
         {isCropping && screenshotData && (
           <div style={{
-            position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.7)",
+            position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.5)",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <div style={{
-              background: "#1c1f26", borderRadius: 12, padding: 20,
-              boxShadow: "0 20px 60px rgba(0,0,0,.6)", maxWidth: "90vw", maxHeight: "90vh",
+              background: "#ffffff", borderRadius: 12, padding: 20,
+              boxShadow: "0 20px 60px rgba(0,0,0,.15)", maxWidth: "90vw", maxHeight: "90vh",
               display: "flex", flexDirection: "column", gap: 12,
             }}>
-              <div style={{ color: "#9ca3af", fontSize: 13 }}>
+              <div style={{ color: "#6b7280", fontSize: 13 }}>
                 Drag to select the area you want to keep, then click <strong>Save</strong>.
               </div>
               <div style={{
@@ -1356,21 +1382,21 @@ export default function App() {
                     {/* Dark overlay areas */}
                     <div style={{
                       position: "absolute", left: 0, top: 0, width: "100%", height: cropRect.y,
-                      background: "rgba(0,0,0,.5)", pointerEvents: "none",
+                      background: "rgba(0,0,0,.4)", pointerEvents: "none",
                     }} />
                     <div style={{
                       position: "absolute", left: 0, top: cropRect.y + cropRect.h, width: "100%",
                       height: `calc(100% - ${cropRect.y + cropRect.h}px)`,
-                      background: "rgba(0,0,0,.5)", pointerEvents: "none",
+                      background: "rgba(0,0,0,.4)", pointerEvents: "none",
                     }} />
                     <div style={{
                       position: "absolute", left: 0, top: cropRect.y, width: cropRect.x, height: cropRect.h,
-                      background: "rgba(0,0,0,.5)", pointerEvents: "none",
+                      background: "rgba(0,0,0,.4)", pointerEvents: "none",
                     }} />
                     <div style={{
                       position: "absolute", left: cropRect.x + cropRect.w, top: cropRect.y,
                       width: `calc(100% - ${cropRect.x + cropRect.w}px)`, height: cropRect.h,
-                      background: "rgba(0,0,0,.5)", pointerEvents: "none",
+                      background: "rgba(0,0,0,.4)", pointerEvents: "none",
                     }} />
                     {/* Selection border */}
                     <div style={{
@@ -1400,8 +1426,8 @@ export default function App() {
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
                 <button onClick={cancelScreenshot}
                   style={{
-                    padding: "8px 20px", borderRadius: 8, border: "1px solid #2c313b",
-                    background: "transparent", color: "#9ca3af", cursor: "pointer", fontSize: 13,
+                    padding: "8px 20px", borderRadius: 8, border: "1px solid #d1d5db",
+                    background: "transparent", color: "#6b7280", cursor: "pointer", fontSize: 13,
                   }}>Cancel</button>
                 <button onClick={saveScreenshot}
                   style={{
@@ -1420,7 +1446,7 @@ export default function App() {
 function Row({ label, value }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between" }}>
-      <span style={{ color: "#6b7280" }}>{label}</span>
+      <span style={{ color: "#9ca3af" }}>{label}</span>
       <span>{value}</span>
     </div>
   );
@@ -1428,8 +1454,8 @@ function Row({ label, value }) {
 
 function iconBtnStyle(disabled) {
   return {
-    width: 34, height: 34, borderRadius: 8, border: "none", background: "#202430",
-    color: disabled ? "#4b5563" : "#d1d5db", display: "flex", alignItems: "center", justifyContent: "center",
+    width: 34, height: 34, borderRadius: 8, border: "none", background: "#f3f4f6",
+    color: disabled ? "#9ca3af" : "#374151", display: "flex", alignItems: "center", justifyContent: "center",
     cursor: disabled ? "not-allowed" : "pointer",
   };
 }
@@ -1445,9 +1471,9 @@ function handleStyle(pos) {
   return base;
 }
 
-const kbdStyle = { background: "#262a33", padding: "1px 6px", borderRadius: 4, fontSize: 12 };
+const kbdStyle = { background: "#e5e7eb", padding: "1px 6px", borderRadius: 4, fontSize: 12 };
 
 const selectStyle = {
-  width: "100%", background: "#202430", color: "#e5e7eb", border: "1px solid #2c313b",
+  width: "100%", background: "#ffffff", color: "#1f2937", border: "1px solid #d1d5db",
   borderRadius: 6, padding: "6px 8px", fontSize: 13, boxSizing: "border-box"
 };
