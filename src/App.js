@@ -355,7 +355,7 @@ export default function App() {
       for (const item of items) {
         if (item.type.indexOf("image") !== -1) {
           const file = item.getAsFile();
-          if (!bgImage) {
+          if (elements.length === 0 && !bgImage) {
             loadImageFile(file);
           } else {
             addOverlayImage(file);
@@ -367,7 +367,7 @@ export default function App() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [editingTextId, bgImage]);
+  }, [editingTextId, bgImage, elements]);
 
   function loadImageFile(file) {
     if (!file) return;
