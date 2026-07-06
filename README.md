@@ -1,70 +1,125 @@
-# Getting Started with Create React App
+# Image Labeling
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A browser-based image annotation and editing tool built with React. Draw shapes, add text, overlay images, take screenshots, and export your work — all in a single-page app.
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+### Canvas
+- Resizable canvas with custom **width** and **height** (50–4000px)
+- Configurable **background color** or **background image** (upload or screenshot)
+- Background images are cropped to fit the canvas (top-left anchored)
 
-### `npm start`
+### Drawing Tools
+| Tool | Description |
+|------|-------------|
+| Select | Select, move, resize, and rotate elements on the canvas |
+| Pan | Drag to pan the canvas viewport |
+| Rectangle | Draw a rounded rectangle |
+| Ellipse | Draw an ellipse / circle |
+| Triangle | Draw a triangle |
+| Line | Draw a straight line |
+| Arrow | Draw an arrow (configurable head/tail) |
+| Pen | Freehand drawing |
+| Text | Add editable text labels |
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### Color & Stroke
+- Predefined **color palette** (7 colors)
+- **Custom color picker** for any color
+- **Stroke width** slider (1–16px)
+- **Fill color** toggle with custom color picker for Rectangle, Ellipse, and Triangle
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Image Overlay
+- Upload images from file and place them as overlays on the canvas
+- **Keep aspect ratio** toggle when resizing overlay images
+- Adjustable position, size, and rotation via the inspector
 
-### `npm test`
+### Screenshot Capture
+- **Picture-in-Picture (PiP)** capture flow:
+  1. Click "Take screenshot" in the sidebar popover
+  2. Click "Capture" in the PiP window
+  3. Select a screen / window / tab in the browser dialog
+  4. The screenshot is captured and opened in a **crop modal**
+- Crop modal: drag to select the area you want to keep, then **Save**
+- Screenshots can be added as either **background image** or **overlay image**
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### Clipboard
+- **Ctrl/Cmd+V** – Paste an image from the clipboard (sets as background if empty, otherwise adds as overlay)
+- **Ctrl/Cmd+C** – Copy the entire canvas as an image to the clipboard
+- Dedicated paste status indicator icon in the sidebar
 
-### `npm run build`
+### Export
+- **Export PNG** – Download the full canvas (with all elements) as a PNG file
+- **Copy Image** – Copy the full canvas to the clipboard as an image
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### Zoom & Pan
+- **Ctrl + Scroll** – Zoom in/out on the canvas
+- **Zoom buttons** in toolbar: Zoom Out, zoom percentage, Zoom In, Fit (reset to 100%)
+- **Middle mouse button** – Pan the canvas viewport
+- **Pan tool** – Dedicated hand tool for dragging the viewport
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### Inspector (Right Panel)
+- **Canvas inspector**: Edit width, height, background color, or remove the background image
+- **Element inspector**: Edit X, Y, Width, Height, Rotation, Stroke width, Stroke color, Fill color, Font size (text), Arrow head/tail types
+- Keyboard shortcuts reference when nothing is selected
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### Undo / Redo
+- **Undo** (Ctrl/Cmd+Z) – step back through up to 50 previous states
+- **Redo** (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y) – step forward
+- **Duplicate** (Ctrl/Cmd+D) – duplicate the selected element
 
-### `npm run eject`
+### Keyboard Shortcuts
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+| Shortcut | Action |
+|----------|--------|
+| Delete / Backspace | Remove selected element |
+| Ctrl/Cmd + Z | Undo |
+| Ctrl/Cmd + Shift + Z | Redo |
+| Ctrl/Cmd + Y | Redo |
+| Ctrl/Cmd + D | Duplicate selected element |
+| Ctrl/Cmd + C | Copy canvas as image |
+| Ctrl/Cmd + V | Paste image from clipboard |
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+### Theme
+Clean **light theme** UI with light gray backgrounds, white panels, and subtle borders.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Getting Started
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### Prerequisites
+- Node.js 16+ and npm
 
-## Learn More
+### Install
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```bash
+npm install
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+### Run (development)
 
-### Code Splitting
+```bash
+npm start
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### Analyzing the Bundle Size
+### Build (production)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+```bash
+npm run build
+```
 
-### Making a Progressive Web App
+Produces an optimized build in the `build/` folder.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+## Tech Stack
 
-### Advanced Configuration
+- **React** (Create React App)
+- **lucide-react** – icon library
+- Pure CSS-in-JS (inline styles) – no external CSS framework
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## Browser Support
 
-### Deployment
+Requires a browser that supports:
+- [Document Picture-in-Picture API](https://developer.mozilla.org/en-US/docs/Web/API/Document_Picture-in-Picture_API) (Chrome 116+) – for screenshot capture
+- [Screen Capture API](https://developer.mozilla.org/en-US/docs/Web/API/Screen_Capture_API) (getDisplayMedia)
+- [Clipboard API](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard_API) (write / read)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+The app will gracefully degrade on browsers missing PiP support (screenshot capture will be unavailable, other features work normally).
