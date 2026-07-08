@@ -446,11 +446,9 @@ export default function App() {
     const pt = getCanvasPoint(e);
 
     if (tool === "select") {
-      // Start marquee selection drag
-      setSelectedIds([]);
-      const marqueeStart = { x: pt.x, y: pt.y, w: 0, h: 0 };
-      setMarqueeRect(marqueeStart);
-      dragRef.current = { mode: "marquee", startX: pt.x, startY: pt.y, rect: marqueeStart };
+      // Click selects canvas; drag (movement > 5px) starts marquee
+      setSelectedIds(["__canvas__"]);
+      dragRef.current = { mode: "marquee-pending", startX: pt.x, startY: pt.y };
       window.addEventListener("pointermove", onWindowPointerMove);
       window.addEventListener("pointerup", onWindowPointerUp);
       return;
@@ -584,6 +582,17 @@ export default function App() {
         const angle = Math.atan2(pt.y - cy, pt.x - cx) * (180 / Math.PI) + 90;
         return { ...el, rotation: Math.round(angle) };
       }), false);
+    } else if (drag.mode === "marquee-pending") {
+      const dx = pt.x - drag.startX;
+      const dy = pt.y - drag.startY;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        // Transition to full marquee mode
+        setSelectedIds([]);
+        const rect = { x: Math.min(drag.startX, pt.x), y: Math.min(drag.startY, pt.y), w: Math.abs(dx), h: Math.abs(dy) };
+        setMarqueeRect(rect);
+        dragRef.current = { mode: "marquee", startX: drag.startX, startY: drag.startY, rect };
+      }
+      return;
     } else if (drag.mode === "marquee") {
       const x = Math.min(drag.startX, pt.x);
       const y = Math.min(drag.startY, pt.y);
@@ -606,12 +615,18 @@ export default function App() {
   }
 
   function onWindowPointerUp() {
-    const wasMarquee = dragRef.current?.mode === "marquee";
+    const mode = dragRef.current?.mode;
     const marqueeRectFromRef = dragRef.current?.rect;
-    const wasCanvasResize = dragRef.current?.mode === "canvas-resize";
+    const wasCanvasResize = mode === "canvas-resize";
+    const wasMarqueePending = mode === "marquee-pending";
+    const wasMarquee = mode === "marquee";
     dragRef.current = null;
     window.removeEventListener("pointermove", onWindowPointerMove);
     window.removeEventListener("pointerup", onWindowPointerUp);
+    if (wasMarqueePending) {
+      // Click (no drag) — canvas already selected, nothing more to do
+      return;
+    }
     if (wasMarquee) {
       setMarqueeRect(null);
       if (marqueeRectFromRef && marqueeRectFromRef.w > 5 && marqueeRectFromRef.h > 5) {
