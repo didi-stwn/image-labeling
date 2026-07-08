@@ -3,6 +3,7 @@ import {
   MousePointer2, Square, Circle, Minus, ArrowUpRight, Type as TypeIcon,
   Pencil, Image as ImageIcon, ImagePlus, Trash2, Copy, Download, Undo2, Redo2,
   ClipboardPaste, RotateCw, ClipboardCheck, Triangle, Camera, ZoomIn, ZoomOut, Hand,
+  ChevronUp, ChevronDown, ArrowUpToLine, ArrowDownToLine,
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -123,7 +124,9 @@ export default function App() {
   const [canvasColor, setCanvasColor] = useState("#ffffff");
   const [zoom, setZoom] = useState(1);
   const [elements, setElements] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]); // array for multi-select, first is primary
+  const selectedId = selectedIds[0] || null; // primary selection for inspector
+  const [clipboardElements, setClipboardElements] = useState(null); // serialized JSON for copy/paste
   const [tool, setTool] = useState("select");
   const [color, setColor] = useState("#ef4444");
   const [strokeWidth, setStrokeWidth] = useState(3);
@@ -131,6 +134,7 @@ export default function App() {
   const [future, setFuture] = useState([]);
   const [editingTextId, setEditingTextId] = useState(null);
   const [copyStatus, setCopyStatus] = useState(null); // null | "copied" | "failed"
+  const [marqueeRect, setMarqueeRect] = useState(null); // {x, y, w, h} for rubber-band selection
 
   // Image overlay popover & screenshot states
   const [showImagePopover, setShowImagePopover] = useState(false);
@@ -145,6 +149,8 @@ export default function App() {
   const canvasContainerRef = useRef(null);
   const dragRef = useRef(null); // info about ongoing drag/draw/resize/rotate
   const panRef = useRef(null); // {startX, startY, scrollLeft, scrollTop} for middle-button pan
+  const elementsRef = useRef(elements);
+  elementsRef.current = elements; // always up-to-date for use in closures
   const imagePopoverRef = useRef(null);
   const bgImagePopoverRef = useRef(null);
   const overlayFileInputRef = useRef(null);
@@ -310,7 +316,7 @@ export default function App() {
         setElements([]);
         setHistory([]);
         setFuture([]);
-        setSelectedId(null);
+        setSelectedIds([]);
       } else {
         // Add as overlay image on the current canvas
         const canvasW = canvasSize.width;
@@ -325,7 +331,7 @@ export default function App() {
           keepAspectRatio: true,
         };
         updateElements((prev) => [...prev, el]);
-        setSelectedId(el.id);
+        setSelectedIds([el.id]);
         setTool("select");
       }
 
@@ -380,7 +386,7 @@ export default function App() {
         setElements([]);
         setHistory([]);
         setFuture([]);
-        setSelectedId(null);
+        setSelectedIds([]);
       };
       img.src = ev.target.result;
     };
@@ -389,7 +395,7 @@ export default function App() {
 
   function clearBackgroundImage() {
     setBgImage(null);
-    setSelectedId("__canvas__");
+    setSelectedIds(["__canvas__"]);
   }
 
   function addOverlayImage(file) {
@@ -409,7 +415,7 @@ export default function App() {
           keepAspectRatio: true,
         };
         updateElements((prev) => [...prev, el]);
-        setSelectedId(el.id);
+        setSelectedIds([el.id]);
         setTool("select");
       };
       img.src = ev.target.result;
@@ -440,7 +446,13 @@ export default function App() {
     const pt = getCanvasPoint(e);
 
     if (tool === "select") {
-      setSelectedId("__canvas__");
+      // Start marquee selection drag
+      setSelectedIds([]);
+      const marqueeStart = { x: pt.x, y: pt.y, w: 0, h: 0 };
+      setMarqueeRect(marqueeStart);
+      dragRef.current = { mode: "marquee", startX: pt.x, startY: pt.y, rect: marqueeStart };
+      window.addEventListener("pointermove", onWindowPointerMove);
+      window.addEventListener("pointerup", onWindowPointerUp);
       return;
     }
 
@@ -471,7 +483,7 @@ export default function App() {
     if (tool === "text") el.color = color;
 
     updateElements((prev) => [...prev, el]);
-    setSelectedId(el.id);
+    setSelectedIds([el.id]);
 
     dragRef.current = { mode: "draw", id: el.id, startX: pt.x, startY: pt.y, type: tool };
     if (tool !== "text") {
@@ -520,12 +532,25 @@ export default function App() {
       const dx = pt.x - drag.startX;
       const dy = pt.y - drag.startY;
       updateElements((prev) => prev.map((el) => {
-        if (el.id !== drag.id) return el;
-        const moved = { ...el, x: drag.origX + dx, y: drag.origY + dy };
-        if (el.type === "pen") {
-          moved.points = drag.origPoints.map(([px, py]) => [px + dx, py + dy]);
+        const isMulti = drag.multiIds && drag.multiIds.includes(el.id);
+        if (!isMulti && el.id !== drag.id) return el;
+        if (el.id === drag.id) {
+          const moved = { ...el, x: drag.origX + dx, y: drag.origY + dy };
+          if (el.type === "pen") {
+            moved.points = drag.origPoints.map(([px, py]) => [px + dx, py + dy]);
+          }
+          return moved;
         }
-        return moved;
+        // Multi-select move: use stored orig positions
+        const orig = drag.origPositions?.[el.id];
+        if (orig) {
+          const moved = { ...el, x: orig.x + dx, y: orig.y + dy };
+          if (el.type === "pen") {
+            moved.points = orig.points.map(([px, py]) => [px + dx, py + dy]);
+          }
+          return moved;
+        }
+        return el;
       }), false);
     } else if (drag.mode === "resize") {
       const dx = pt.x - drag.startX;
@@ -559,6 +584,15 @@ export default function App() {
         const angle = Math.atan2(pt.y - cy, pt.x - cx) * (180 / Math.PI) + 90;
         return { ...el, rotation: Math.round(angle) };
       }), false);
+    } else if (drag.mode === "marquee") {
+      const x = Math.min(drag.startX, pt.x);
+      const y = Math.min(drag.startY, pt.y);
+      const w = Math.abs(pt.x - drag.startX);
+      const h = Math.abs(pt.y - drag.startY);
+      const rect = { x, y, w, h };
+      dragRef.current.rect = rect;
+      setMarqueeRect(rect);
+      return;
     } else if (drag.mode === "canvas-resize") {
       const dx = pt.x - drag.startX;
       const dy = pt.y - drag.startY;
@@ -572,10 +606,26 @@ export default function App() {
   }
 
   function onWindowPointerUp() {
+    const wasMarquee = dragRef.current?.mode === "marquee";
+    const marqueeRectFromRef = dragRef.current?.rect;
     const wasCanvasResize = dragRef.current?.mode === "canvas-resize";
     dragRef.current = null;
     window.removeEventListener("pointermove", onWindowPointerMove);
     window.removeEventListener("pointerup", onWindowPointerUp);
+    if (wasMarquee) {
+      setMarqueeRect(null);
+      if (marqueeRectFromRef && marqueeRectFromRef.w > 5 && marqueeRectFromRef.h > 5) {
+        const ids = elementsRef.current
+          .filter((el) => {
+            const overlapX = el.x < marqueeRectFromRef.x + marqueeRectFromRef.w && el.x + el.width > marqueeRectFromRef.x;
+            const overlapY = el.y < marqueeRectFromRef.y + marqueeRectFromRef.h && el.y + el.height > marqueeRectFromRef.y;
+            return overlapX && overlapY;
+          })
+          .map((el) => el.id);
+        if (ids.length) setSelectedIds(ids);
+      }
+      return;
+    }
     if (wasCanvasResize) return;
     // commit final state into history (re-sync by pushing current as a checkpoint)
     setElements((prev) => {
@@ -587,9 +637,39 @@ export default function App() {
   function startMove(e, el) {
     if (tool !== "select") return;
     e.stopPropagation();
-    setSelectedId(el.id);
     const pt = getCanvasPoint(e);
-    dragRef.current = { mode: "move", id: el.id, startX: pt.x, startY: pt.y, origX: el.x, origY: el.y, origPoints: el.points };
+
+    // Multi-select: if shift is held, toggle selection
+    if (e.shiftKey) {
+      setSelectedIds((prev) => {
+        const isSelected = prev.includes(el.id);
+        if (isSelected) {
+          return prev.filter((id) => id !== el.id);
+        } else {
+          return [...prev, el.id];
+        }
+      });
+      return;
+    }
+
+    // If clicking and not already selected, select only this one
+    if (!selectedIds.includes(el.id)) {
+      setSelectedIds([el.id]);
+    }
+
+    // Build drag state - include all selected elements for multi-move
+    const idsToMove = selectedIds.includes(el.id) ? selectedIds : [el.id];
+    const origPositions = {};
+    elements.forEach((e) => {
+      if (idsToMove.includes(e.id)) {
+        origPositions[e.id] = { x: e.x, y: e.y, points: e.points ? [...e.points.map((p) => [...p])] : null };
+      }
+    });
+    dragRef.current = {
+      mode: "move", id: el.id, multiIds: idsToMove, multi: idsToMove.length > 1,
+      startX: pt.x, startY: pt.y, origX: el.x, origY: el.y, origPoints: el.points,
+      origPositions,
+    };
     window.addEventListener("pointermove", onWindowPointerMove);
     window.addEventListener("pointerup", onWindowPointerUp);
   }
@@ -650,33 +730,114 @@ export default function App() {
 
   // ---------- actions ----------
   function deleteSelected() {
-    if (!selectedId || selectedId === "__canvas__") return;
-    updateElements((prev) => prev.filter((e) => e.id !== selectedId));
-    setSelectedId(null);
+    if (!selectedIds.length || selectedIds[0] === "__canvas__") return;
+    updateElements((prev) => prev.filter((e) => !selectedIds.includes(e.id)));
+    setSelectedIds([]);
   }
 
   function duplicateSelected() {
-    if (!selectedId || selectedId === "__canvas__") return;
+    if (!selectedIds.length || selectedIds[0] === "__canvas__") return;
     updateElements((prev) => {
-      const el = prev.find((e) => e.id === selectedId);
-      if (!el) return prev;
-      const copy = { ...el, id: uid(), x: el.x + 16, y: el.y + 16 };
-      if (el.type === "pen") copy.points = el.points.map(([px, py]) => [px + 16, py + 16]);
-      setSelectedId(copy.id);
-      return [...prev, copy];
+      const copies = [];
+      selectedIds.forEach((id) => {
+        const el = prev.find((e) => e.id === id);
+        if (!el) return;
+        const copy = { ...el, id: uid(), x: el.x + 16, y: el.y + 16 };
+        if (el.type === "pen") copy.points = el.points.map(([px, py]) => [px + 16, py + 16]);
+        copies.push(copy);
+      });
+      if (!copies.length) return prev;
+      setSelectedIds(copies.map((c) => c.id));
+      return [...prev, ...copies];
+    });
+  }
+
+  function copySelectedElements() {
+    if (!selectedIds.length || selectedIds[0] === "__canvas__") return;
+    const els = elements.filter((e) => selectedIds.includes(e.id));
+    setClipboardElements(JSON.parse(JSON.stringify(els)));
+  }
+
+  function pasteElements() {
+    if (!clipboardElements || !clipboardElements.length) return;
+    updateElements((prev) => {
+      const newEls = clipboardElements.map((el) => {
+        const copy = { ...el, id: uid(), x: el.x + 20, y: el.y + 20 };
+        if (el.type === "pen" && el.points) {
+          copy.points = el.points.map(([px, py]) => [px + 20, py + 20]);
+        }
+        return copy;
+      });
+      setSelectedIds(newEls.map((c) => c.id));
+      return [...prev, ...newEls];
     });
   }
 
   function changeSelectedColor(c) {
     setColor(c);
-    if (selectedId === "__canvas__") {
+    if (selectedIds[0] === "__canvas__") {
       if (!bgImage) setCanvasColor(c);
       return;
     }
-    if (!selectedId) return;
-    updateElements((prev) => prev.map((el) => el.id === selectedId
-      ? { ...el, stroke: el.type === "text" ? el.stroke : c, color: el.type === "text" ? c : el.color }
-      : el));
+    if (!selectedIds.length) return;
+    updateElements((prev) => prev.map((el) =>
+      selectedIds.includes(el.id)
+        ? { ...el, stroke: el.type === "text" ? el.stroke : c, color: el.type === "text" ? c : el.color }
+        : el
+    ));
+  }
+
+  // ---------- z-index reorder ----------
+  function bringForward() {
+    if (!selectedIds.length || selectedIds[0] === "__canvas__") return;
+    updateElements((prev) => {
+      const arr = [...prev];
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (selectedIds.includes(arr[i].id) && i < arr.length - 1) {
+          const next = arr.findIndex((e, idx) => idx > i && !selectedIds.includes(e.id));
+          if (next !== -1) {
+            [arr[i], arr[next]] = [arr[next], arr[i]];
+            break;
+          }
+        }
+      }
+      return arr;
+    });
+  }
+
+  function sendBackward() {
+    if (!selectedIds.length || selectedIds[0] === "__canvas__") return;
+    updateElements((prev) => {
+      const arr = [...prev];
+      for (let i = 0; i < arr.length; i++) {
+        if (selectedIds.includes(arr[i].id) && i > 0) {
+          const prevIdx = arr.findLastIndex((e, idx) => idx < i && !selectedIds.includes(e.id));
+          if (prevIdx !== -1) {
+            [arr[i], arr[prevIdx]] = [arr[prevIdx], arr[i]];
+            break;
+          }
+        }
+      }
+      return arr;
+    });
+  }
+
+  function bringToFront() {
+    if (!selectedIds.length || selectedIds[0] === "__canvas__") return;
+    updateElements((prev) => {
+      const selected = prev.filter((e) => selectedIds.includes(e.id));
+      const others = prev.filter((e) => !selectedIds.includes(e.id));
+      return [...others, ...selected];
+    });
+  }
+
+  function sendToBack() {
+    if (!selectedIds.length || selectedIds[0] === "__canvas__") return;
+    updateElements((prev) => {
+      const selected = prev.filter((e) => selectedIds.includes(e.id));
+      const others = prev.filter((e) => !selectedIds.includes(e.id));
+      return [...selected, ...others];
+    });
   }
 
   function undo() {
@@ -698,11 +859,25 @@ export default function App() {
   useEffect(() => {
     const onKey = (e) => {
       if (editingTextId) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) { deleteSelected(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
-      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === "d" && selectedId) { e.preventDefault(); duplicateSelected(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === "c" && !window.getSelection()?.toString()) { e.preventDefault(); copyAsImage(); }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.length) { e.preventDefault(); deleteSelected(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "d" && selectedIds.length) { e.preventDefault(); duplicateSelected(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "c" && !window.getSelection()?.toString()) {
+        e.preventDefault();
+        if (selectedId && selectedId !== "__canvas__") {
+          copySelectedElements();
+        } else {
+          copyAsImage();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "v" && !editingTextId) {
+        // Paste copied elements from internal clipboard
+        if (clipboardElements && clipboardElements.length) {
+          e.preventDefault();
+          pasteElements();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -849,25 +1024,24 @@ export default function App() {
 
   async function copyAsImage() {
     try {
+      setCopyStatus(null);
+      setClipboardElements(null); // clear internal clipboard so Ctrl+V pastes image instead of elements
       const canvasOut = await buildExportCanvas();
-      canvasOut.toBlob(async (blob) => {
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-          setCopyStatus("copied");
-        } catch (err) {
-          setCopyStatus("failed");
-        }
-        setTimeout(() => setCopyStatus(null), 1800);
-      }, "image/png");
+      const dataUrl = canvasOut.toDataURL("image/png");
+      const blob = await (await fetch(dataUrl)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setCopyStatus("copied");
     } catch (err) {
+      console.error("copyAsImage failed:", err);
       setCopyStatus("failed");
-      setTimeout(() => setCopyStatus(null), 1800);
     }
+    setTimeout(() => setCopyStatus(null), 1800);
   }
 
   const selectedEl = elements.find((e) => e.id === selectedId);
   const canvasW = canvasSize.width;
   const canvasH = canvasSize.height;
+  const hasSelection = selectedIds.length > 0 && selectedIds[0] !== "__canvas__";
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100%", background: "#f3f4f6", fontFamily: "Inter, system-ui, sans-serif", color: "#1f2937" }}>
@@ -1010,8 +1184,8 @@ export default function App() {
           <div style={{ width: 1, height: 24, background: "#e5e7eb" }} />
           <button onClick={undo} disabled={!history.length} style={iconBtnStyle(!history.length)} title="Undo"><Undo2 size={18} /></button>
           <button onClick={redo} disabled={!future.length} style={iconBtnStyle(!future.length)} title="Redo"><Redo2 size={18} /></button>
-          <button onClick={duplicateSelected} disabled={!selectedId || selectedId === "__canvas__"} style={iconBtnStyle(!selectedId || selectedId === "__canvas__")} title="Duplicate"><Copy size={18} /></button>
-          <button onClick={deleteSelected} disabled={!selectedId || selectedId === "__canvas__"} style={iconBtnStyle(!selectedId || selectedId === "__canvas__")} title="Delete"><Trash2 size={18} /></button>
+          <button onClick={duplicateSelected} disabled={!hasSelection} style={iconBtnStyle(!hasSelection)} title="Duplicate (Ctrl/Cmd+D)"><Copy size={18} /></button>
+          <button onClick={deleteSelected} disabled={!hasSelection} style={iconBtnStyle(!hasSelection)} title="Delete"><Trash2 size={18} /></button>
           <div style={{ flex: 1 }} />
           <div style={{ width: 1, height: 24, background: "#e5e7eb" }} />
           <button onClick={() => setZoom((z) => clamp(z - 0.1, 0.1, 5))} style={iconBtnStyle(false)} title="Zoom out">
@@ -1036,6 +1210,11 @@ export default function App() {
         {/* Canvas area */}
         <div ref={canvasContainerRef}
           onPointerDown={(e) => {
+            // Left-click outside canvas → deselect all
+            if (e.button === 0 && e.target === e.currentTarget) {
+              setSelectedIds([]);
+              return;
+            }
             // Middle-button pan
             if (e.button === 1) {
               e.preventDefault();
@@ -1067,7 +1246,7 @@ export default function App() {
               background: bgImage ? `url(${bgImage.src})` : canvasColor,
               backgroundSize: bgImage ? "cover" : "100% 100%",
               backgroundPosition: "0 0",
-              boxShadow: selectedId === "__canvas__"
+              boxShadow: selectedIds[0] === "__canvas__"
                 ? "0 0 0 2px #3b82f6, 0 10px 30px rgba(0,0,0,.1)"
                 : "0 0 0 1px #d1d5db, 0 10px 30px rgba(0,0,0,.1)",
               borderRadius: 4, cursor: tool === "select" ? "default" : tool === "pan" ? "grab" : "crosshair", flexShrink: 0,
@@ -1080,7 +1259,8 @@ export default function App() {
               </div>
             )}
             {elements.map((el) => {
-              const isSelected = el.id === selectedId;
+              const isSelected = selectedIds.includes(el.id);
+              const isPrimary = el.id === selectedId;
               return (
                 <div key={el.id}
                   onPointerDown={(e) => startMove(e, el)}
@@ -1088,7 +1268,8 @@ export default function App() {
                   style={{
                     position: "absolute", left: el.x, top: el.y, width: el.width, height: el.height,
                     transform: `rotate(${el.rotation || 0}deg)`, transformOrigin: "center center",
-                    outline: isSelected ? "1px dashed #3b82f6" : "none",
+                    outline: isSelected ? (isPrimary ? "1px dashed #3b82f6" : "1px dashed #60a5fa") : "none",
+                    outlineOffset: isPrimary ? 0 : 1,
                     cursor: tool === "select" ? "move" : "default",
                   }}>
                   {el.type === "text" ? (
@@ -1119,7 +1300,7 @@ export default function App() {
                     <ShapeSVG el={el} />
                   )}
 
-                  {isSelected && tool === "select" && (
+                  {isPrimary && isSelected && tool === "select" && (
                     <>
                       {["nw", "ne", "sw", "se"].map((h) => (
                         <div key={h} className="no-canvas-drag" onPointerDown={(e) => startResize(e, el, h)}
@@ -1138,7 +1319,15 @@ export default function App() {
                 </div>
               );
             })}
-            {selectedId === "__canvas__" && tool === "select" && (
+            {marqueeRect && marqueeRect.w > 0 && marqueeRect.h > 0 && (
+              <div style={{
+                position: "absolute", left: marqueeRect.x, top: marqueeRect.y,
+                width: marqueeRect.w, height: marqueeRect.h,
+                border: "1px dashed #3b82f6", background: "rgba(59,130,246,.08)",
+                pointerEvents: "none", zIndex: 100,
+              }} />
+            )}
+            {selectedIds[0] === "__canvas__" && tool === "select" && (
               <>
                 <div className="no-canvas-drag" onPointerDown={(e) => startCanvasResize(e, "e")}
                   style={{ position: "absolute", top: "50%", right: -6, width: 10, height: 36, marginTop: -18, background: "#3b82f6", borderRadius: 4, cursor: "ew-resize" }} />
@@ -1154,8 +1343,10 @@ export default function App() {
 
       {/* Right inspector */}
       <div style={{ width: 300, minWidth: 300, background: "#ffffff", borderLeft: "1px solid #e5e7eb", padding: 16, fontSize: 13, boxSizing: "border-box" }}>
-        <div style={{ color: "#6b7280", textTransform: "uppercase", fontSize: 11, letterSpacing: 0.6, marginBottom: 10 }}>Inspector</div>
-        {selectedId === "__canvas__" ? (
+        <div style={{ color: "#6b7280", textTransform: "uppercase", fontSize: 11, letterSpacing: 0.6, marginBottom: 10 }}>
+          Inspector{selectedIds.length > 1 ? ` (${selectedIds.length} selected)` : ""}
+        </div>
+        {selectedIds[0] === "__canvas__" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Row label="Type" value="canvas" />
             <div>
@@ -1189,7 +1380,7 @@ export default function App() {
           </div>
         ) : selectedEl ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Row label="Type" value={selectedEl.type} />
+            <Row label="Type" value={selectedIds.length > 1 ? `multi (${selectedIds.length})` : selectedEl.type} />
             <div>
               <div style={{ color: "#6b7280", marginBottom: 4 }}>X</div>
               <input type="number" value={Math.round(selectedEl.x)}
@@ -1344,6 +1535,23 @@ export default function App() {
                 </div>
               </>
             )}
+            <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 10, marginTop: 4 }}>
+              <div style={{ color: "#6b7280", marginBottom: 6, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6 }}>Z-Index</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={sendToBack} disabled={!hasSelection} style={{ ...iconBtnStyle(!hasSelection), flex: 1 }} title="Send to back">
+                  <ArrowDownToLine size={16} />
+                </button>
+                <button onClick={sendBackward} disabled={!hasSelection} style={{ ...iconBtnStyle(!hasSelection), flex: 1 }} title="Send backward">
+                  <ChevronDown size={16} />
+                </button>
+                <button onClick={bringForward} disabled={!hasSelection} style={{ ...iconBtnStyle(!hasSelection), flex: 1 }} title="Bring forward">
+                  <ChevronUp size={16} />
+                </button>
+                <button onClick={bringToFront} disabled={!hasSelection} style={{ ...iconBtnStyle(!hasSelection), flex: 1 }} title="Bring to front">
+                  <ArrowUpToLine size={16} />
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
           <div style={{ color: "#6b7280", lineHeight: 1.5 }}>
@@ -1351,9 +1559,12 @@ export default function App() {
             <br /><br />
             <strong style={{ color: "#6b7280" }}>Shortcuts</strong>
             <br />Delete – remove
-            <br />Ctrl/Cmd+D – duplicate
-            <br />Ctrl/Cmd+Z – undo
+            <br />Shift+click – multi-select
             <br />Ctrl/Cmd+Shift+Z – redo
+            <br />Ctrl/Cmd+Z – undo
+            <br />Ctrl/Cmd+D – duplicate
+            <br />Ctrl/Cmd+C – copy element(s) or canvas
+            <br />Ctrl/Cmd+V – paste element(s)
           </div>
         )}
 
