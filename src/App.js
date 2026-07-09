@@ -1385,7 +1385,7 @@ export default function App() {
 
                   {isPrimary && isSelected && tool === "select" && (
                     <>
-                      {["nw", "ne", "sw", "se"].map((h) => (
+                      {["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => (
                         <div key={h} className="no-canvas-drag" onPointerDown={(e) => startResize(e, el, h)}
                           style={handleStyle(h)} />
                       ))}
@@ -1759,9 +1759,20 @@ function handleStyle(pos) {
     position: "absolute", width: 9, height: 9, background: "#fff", border: "2px solid #3b82f6",
     borderRadius: 2, zIndex: 5,
   };
-  if (pos.includes("n")) base.top = -5; else base.bottom = -5;
-  if (pos.includes("w")) base.left = -5; else base.right = -5;
-  base.cursor = (pos === "nw" || pos === "se") ? "nwse-resize" : "nesw-resize";
+  if (pos === "n") {
+    base.top = -5; base.left = "50%"; base.marginLeft = -4.5; base.cursor = "ns-resize";
+  } else if (pos === "s") {
+    base.bottom = -5; base.left = "50%"; base.marginLeft = -4.5; base.cursor = "ns-resize";
+  } else if (pos === "e") {
+    base.right = -5; base.top = "50%"; base.marginTop = -4.5; base.cursor = "ew-resize";
+  } else if (pos === "w") {
+    base.left = -5; base.top = "50%"; base.marginTop = -4.5; base.cursor = "ew-resize";
+  } else {
+    // Corners: nw, ne, sw, se
+    if (pos.includes("n")) base.top = -5; else base.bottom = -5;
+    if (pos.includes("w")) base.left = -5; else base.right = -5;
+    base.cursor = (pos === "nw" || pos === "se") ? "nwse-resize" : "nesw-resize";
+  }
   return base;
 }
 
