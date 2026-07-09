@@ -3,7 +3,7 @@ import {
   MousePointer2, Square, Circle, Minus, ArrowUpRight, Type as TypeIcon,
   Pencil, Image as ImageIcon, ImagePlus, Trash2, Copy, Download, Undo2, Redo2,
   ClipboardPaste, RotateCw, ClipboardCheck, Triangle, Camera, ZoomIn, ZoomOut, Hand,
-  ChevronUp, ChevronDown, ArrowUpToLine, ArrowDownToLine,
+  ChevronUp, ChevronDown, ArrowUpToLine, ArrowDownToLine, Check, X,
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -139,6 +139,8 @@ export default function App() {
   const [copyStatus, setCopyStatus] = useState(null); // null | "copied" | "failed"
   const [marqueeRect, setMarqueeRect] = useState(null); // {x, y, w, h} for rubber-band selection
   const [snapGuides, setSnapGuides] = useState([]); // [{axis, pos, start, end}] for alignment guide lines
+  const [croppingElId, setCroppingElId] = useState(null); // id of image element being cropped
+  const [cropElRect, setCropElRect] = useState(null); // {x, y, w, h} crop rect relative to element coords
 
   // Image overlay popover & screenshot states
   const [showImagePopover, setShowImagePopover] = useState(false);
@@ -152,6 +154,7 @@ export default function App() {
   const canvasRef = useRef(null);
   const canvasContainerRef = useRef(null);
   const dragRef = useRef(null); // info about ongoing drag/draw/resize/rotate
+  const cropElDragRef = useRef(null); // {startX, startY, startRect} for element crop
   const panRef = useRef(null); // {startX, startY, scrollLeft, scrollTop} for middle-button pan
   const elementsRef = useRef(elements);
   elementsRef.current = elements; // always up-to-date for use in closures
@@ -355,6 +358,84 @@ export default function App() {
     setIsCropping(false);
     setScreenshotData(null);
     setCropRect(null);
+  }
+
+  // ---------- element image crop ----------
+  function startElementCrop() {
+    if (!selectedEl || selectedEl.type !== "image") return;
+    setCroppingElId(selectedEl.id);
+    // Start with full element bounds as initial crop rect
+    setCropElRect({ x: 0, y: 0, w: selectedEl.width, h: selectedEl.height });
+  }
+
+  function startCropResize(e, handle) {
+    if (!croppingElId) return;
+    e.stopPropagation();
+    const pt = getCanvasPoint(e);
+    const el = elements.find((x) => x.id === croppingElId);
+    if (!el) return;
+    const rect = cropElRect || { x: 0, y: 0, w: el.width, h: el.height };
+    dragRef.current = {
+      mode: "crop-resize", handle,
+      startX: pt.x, startY: pt.y,
+      origX: rect.x, origY: rect.y, origW: rect.w, origH: rect.h,
+      elX: el.x, elY: el.y, elW: el.width, elH: el.height,
+    };
+    window.addEventListener("pointermove", onWindowPointerMove);
+    window.addEventListener("pointerup", onWindowPointerUp);
+  }
+
+  function applyElementCrop() {
+    if (!croppingElId || !cropElRect) return;
+    const el = elements.find((x) => x.id === croppingElId);
+    if (!el || el.type !== "image") return;
+    const { x, y, w, h } = cropElRect;
+    if (w < 5 || h < 5) { cancelElementCrop(); return; }
+    const img = new window.Image();
+    img.onload = () => {
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = w;
+      outCanvas.height = h;
+      const ctx = outCanvas.getContext("2d");
+      // Determine the natural image scale within the element
+      const elemAspect = el.width / el.height;
+      const natAspect = img.width / img.height;
+      let sx, sy, sw, sh;
+      if (natAspect > elemAspect) {
+        // Image is wider than element → crop left/right
+        sh = img.height;
+        sw = img.height * elemAspect;
+        sx = (img.width - sw) / 2;
+        sy = 0;
+      } else {
+        // Image is taller → crop top/bottom
+        sw = img.width;
+        sh = img.width / elemAspect;
+        sx = 0;
+        sy = (img.height - sh) / 2;
+      }
+      const scaleX = sw / el.width;
+      const scaleY = sh / el.height;
+      ctx.drawImage(img, sx + x * scaleX, sy + y * scaleY, w * scaleX, h * scaleY, 0, 0, w, h);
+      const croppedSrc = outCanvas.toDataURL("image/png");
+      updateElements((prev) => prev.map((p) => p.id === croppingElId
+        ? { ...p, src: croppedSrc, width: w, height: h, keepAspectRatio: true }
+        : p
+      ));
+      cancelElementCrop();
+    };
+    img.src = el.src;
+  }
+
+  function cancelElementCrop() {
+    setCroppingElId(null);
+    setCropElRect(null);
+    cropElDragRef.current = null;
+    if (dragRef.current?.mode === "crop-resize") {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", onWindowPointerMove);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+    }
   }
 
   // ---------- clipboard paste (elements + image) ----------
@@ -808,13 +889,29 @@ export default function App() {
         if (drag.handle.includes("s")) h = clamp(drag.origH + dy, 50, 4000);
         return { width: w, height: h };
       });
+    } else if (drag.mode === "crop-resize") {
+      const dx = pt.x - drag.startX;
+      const dy = pt.y - drag.startY;
+      let { origX, origY, origW, origH } = drag;
+      let x = origX, y = origY, w = origW, h = origH;
+      if (drag.handle.includes("e")) w = Math.max(8, origW + dx);
+      if (drag.handle.includes("s")) h = Math.max(8, origH + dy);
+      if (drag.handle.includes("w")) { w = Math.max(8, origW - dx); x = origX + (origW - w); }
+      if (drag.handle.includes("n")) { h = Math.max(8, origH - dy); y = origY + (origH - h); }
+      // Clamp to element bounds
+      const elW = drag.elW, elH = drag.elH;
+      x = clamp(x, 0, elW);
+      y = clamp(y, 0, elH);
+      if (x + w > elW) w = elW - x;
+      if (y + h > elH) h = elH - y;
+      setCropElRect({ x, y, w: Math.max(w, 1), h: Math.max(h, 1) });
     }
   }
 
   function onWindowPointerUp() {
     const mode = dragRef.current?.mode;
     const marqueeRectFromRef = dragRef.current?.rect;
-    const wasCanvasResize = mode === "canvas-resize";
+    const wasCanvasResize = mode === "canvas-resize" || mode === "crop-resize";
     const wasMarqueePending = mode === "marquee-pending";
     const wasMarquee = mode === "marquee";
     dragRef.current = null;
@@ -1131,22 +1228,43 @@ export default function App() {
       const g = document.createElementNS(svgNS, "g");
       g.setAttribute("transform", `translate(${el.x},${el.y}) rotate(${el.rotation || 0}, ${el.width / 2}, ${el.height / 2})`);
       if (el.type === "text") {
-        const lines = (el.text || "").split("\n");
-        const text = document.createElementNS(svgNS, "text");
-        text.setAttribute("font-family", "Inter, Arial, sans-serif");
-        text.setAttribute("font-weight", "600");
-        text.setAttribute("font-size", el.fontSize);
-        text.setAttribute("fill", el.color);
-        text.setAttribute("x", 0);
-        text.setAttribute("y", el.fontSize);
+        // Measure text and wrap to element width using canvas measureText
+        const text = (el.text || "");
+        const fontSize = el.fontSize;
+        const maxW = Math.max(el.width - 4, 1); // account for padding
+        const lines = [];
+        // Use a temporary canvas context for text measurement
+        const tmpC = document.createElement("canvas").getContext("2d");
+        tmpC.font = `600 ${fontSize}px Inter, Arial, sans-serif`;
+        for (const paragraph of text.split("\n")) {
+          const words = paragraph.split(/(?<=\s)|(?=\s)/);
+          let current = "";
+          for (const word of words) {
+            const test = current + word;
+            if (tmpC.measureText(test).width > maxW && current !== "") {
+              lines.push(current);
+              current = word;
+            } else {
+              current = test;
+            }
+          }
+          if (current) lines.push(current);
+        }
+        const svgText = document.createElementNS(svgNS, "text");
+        svgText.setAttribute("font-family", "Inter, Arial, sans-serif");
+        svgText.setAttribute("font-weight", "600");
+        svgText.setAttribute("font-size", fontSize);
+        svgText.setAttribute("fill", el.color);
+        svgText.setAttribute("x", 2);
+        svgText.setAttribute("y", fontSize);
         lines.forEach((line, i) => {
           const tspan = document.createElementNS(svgNS, "tspan");
-          tspan.setAttribute("x", 0);
-          tspan.setAttribute("dy", i === 0 ? 0 : el.fontSize * 1.2);
+          tspan.setAttribute("x", 2);
+          tspan.setAttribute("dy", i === 0 ? 0 : fontSize * 1.2);
           tspan.textContent = line;
-          text.appendChild(tspan);
+          svgText.appendChild(tspan);
         });
-        g.appendChild(text);
+        g.appendChild(svgText);
       } else if (el.type === "image") {
         const img = document.createElementNS(svgNS, "image");
         img.setAttributeNS("http://www.w3.org/1999/xlink", "href", el.src);
@@ -1578,6 +1696,72 @@ export default function App() {
                   style={{ position: "absolute", right: -7, bottom: -7, width: 14, height: 14, background: "#3b82f6", border: "2px solid #fff", borderRadius: 3, cursor: "nwse-resize" }} />
               </>
             )}
+            {croppingElId && (() => {
+              const cropEl = elements.find((e) => e.id === croppingElId);
+              if (!cropEl) return null;
+              const r = cropElRect || { x: 0, y: 0, w: cropEl.width, h: cropEl.height };
+              const cxp = cropEl.x + r.x;
+              const cyp = cropEl.y + r.y;
+              const cwp = r.w;
+              const chp = r.h;
+              const hh = 5; // handle half-offset so 9px handle centers on edge/corner
+              const hs = 9;
+              const handlePositions = {
+                nw: { left: cxp - hh, top: cyp - hh, cursor: "nwse-resize" },
+                n:  { left: cxp + cwp/2 - hs/2, top: cyp - hh, cursor: "ns-resize" },
+                ne: { left: cxp + cwp - hh, top: cyp - hh, cursor: "nesw-resize" },
+                e:  { left: cxp + cwp - hh, top: cyp + chp/2 - hs/2, cursor: "ew-resize" },
+                se: { left: cxp + cwp - hh, top: cyp + chp - hh, cursor: "nwse-resize" },
+                s:  { left: cxp + cwp/2 - hs/2, top: cyp + chp - hh, cursor: "ns-resize" },
+                sw: { left: cxp - hh, top: cyp + chp - hh, cursor: "nesw-resize" },
+                w:  { left: cxp - hh, top: cyp + chp/2 - hs/2, cursor: "ew-resize" },
+              };
+              const handleBase = {
+                position: "absolute", width: hs, height: hs,
+                background: "#fff", border: "2px solid #3b82f6",
+                borderRadius: 2, zIndex: 55,
+              };
+              const iconBtnStyle = {
+                width: 26, height: 26, borderRadius: 6, border: "none",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", zIndex: 55,
+              };
+              return (
+                <>
+                  <div style={{
+                    position: "absolute", inset: 0, background: "rgba(0,0,0,.45)",
+                    zIndex: 50, pointerEvents: "none",
+                  }} />
+                  <div style={{
+                    position: "absolute",
+                    left: cxp, top: cyp,
+                    width: cwp, height: chp,
+                    border: "2px dashed #fff",
+                    pointerEvents: "none", zIndex: 51,
+                    boxShadow: "0 0 0 4000px rgba(0,0,0,.45)",
+                  }} />
+                  {/* Crop resize handles (8-direction) */}
+                  {["nw","n","ne","e","se","s","sw","w"].map((h) => (
+                    <div key={h} className="no-canvas-drag"
+                      onPointerDown={(e) => startCropResize(e, h)}
+                      style={{ ...handleBase, ...handlePositions[h] }}
+                    />
+                  ))}
+                  {/* ✓ (apply) button at top-right corner of crop rect */}
+                  <button onClick={applyElementCrop}
+                    style={{ ...iconBtnStyle, position: "absolute", left: cxp + cwp + 6, top: cyp - 18, background: "#16a34a", color: "#fff" }}
+                    title="Apply crop">
+                    <Check size={16} />
+                  </button>
+                  {/* ✗ (cancel) button next to ✓ */}
+                  <button onClick={cancelElementCrop}
+                    style={{ ...iconBtnStyle, position: "absolute", left: cxp + cwp + 36, top: cyp - 18, background: "#dc2626", color: "#fff" }}
+                    title="Cancel crop">
+                    <X size={16} />
+                  </button>
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -1725,18 +1909,24 @@ export default function App() {
               </div>
             )}
             {selectedEl.type === "image" && (
-              <div>
-                <div style={{ color: "#6b7280", marginBottom: 4 }}>Keep aspect ratio</div>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "#1f2937", fontSize: 13 }}>
-                  <input type="checkbox" checked={selectedEl.keepAspectRatio !== false}
-                    onChange={(e) => {
-                      const v = e.target.checked;
-                      updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, keepAspectRatio: v } : p));
-                    }}
-                    style={{ accentColor: "#3b82f6", width: 16, height: 16 }} />
-                  Lock aspect ratio
-                </label>
-              </div>
+              <>
+                <div>
+                  <div style={{ color: "#6b7280", marginBottom: 4 }}>Keep aspect ratio</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "#1f2937", fontSize: 13 }}>
+                    <input type="checkbox" checked={selectedEl.keepAspectRatio !== false}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        updateElements((prev) => prev.map((p) => p.id === selectedEl.id ? { ...p, keepAspectRatio: v } : p));
+                      }}
+                      style={{ accentColor: "#3b82f6", width: 16, height: 16 }} />
+                    Lock aspect ratio
+                  </label>
+                </div>
+                <button onClick={startElementCrop}
+                  style={{ ...selectStyle, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#3b82f6", border: "1px solid #bfdbfe", background: "#eff6ff" }}>
+                  <ImagePlus size={14} /> Crop Image
+                </button>
+              </>
             )}
             {selectedEl.type === "text" && (
               <div>
