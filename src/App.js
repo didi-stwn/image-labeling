@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 // ---------- helpers ----------
+const CLIPBOARD_MARKER = "##IMAGE_LABELING_ELS##";
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -127,6 +128,8 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState([]); // array for multi-select, first is primary
   const selectedId = selectedIds[0] || null; // primary selection for inspector
   const [clipboardElements, setClipboardElements] = useState(null); // serialized JSON for copy/paste
+  const clipboardRef = useRef(null); // mirror ref for synchronous access in event handlers
+  clipboardRef.current = clipboardElements;
   const [tool, setTool] = useState("select");
   const [color, setColor] = useState("#ef4444");
   const [strokeWidth, setStrokeWidth] = useState(3);
@@ -353,22 +356,70 @@ export default function App() {
     setCropRect(null);
   }
 
-  // ---------- clipboard paste (image) ----------
+  // ---------- clipboard paste (elements + image) ----------
   useEffect(() => {
-    const onPaste = (e) => {
-      if (editingTextId) return; // let text editing handle its own paste
+    const onPaste = async (e) => {
+      if (editingTextId) return;
       const items = e.clipboardData?.items || [];
-      for (const item of items) {
-        if (item.type.indexOf("image") !== -1) {
-          const file = item.getAsFile();
-          if (elements.length === 0 && !bgImage) {
-            loadImageFile(file);
-          } else {
-            addOverlayImage(file);
+
+      // Helper: try to read our element marker from text/plain on system clipboard
+      async function readMarker() {
+        for (const item of items) {
+          if (item.type === "text/plain") {
+            const text = await new Promise((resolve) => item.getAsString(resolve));
+            try {
+              const parsed = JSON.parse(text);
+              if (parsed && parsed.__marker === CLIPBOARD_MARKER && Array.isArray(parsed.elements)) {
+                return parsed.elements;
+              }
+            } catch (_) {}
           }
-          e.preventDefault();
-          return;
         }
+        return null;
+      }
+      // Helper: try to extract an image from the system clipboard
+      function findImage() {
+        for (const item of items) {
+          if (item.type.indexOf("image") !== -1) {
+            return item.getAsFile();
+          }
+        }
+        return null;
+      }
+
+      const imageFile = findImage();
+      const markerElements = await readMarker();
+
+      // "Last copy wins" — the system clipboard is the single source of truth.
+      // `navigator.clipboard.write()` replaces ALL clipboard content, so:
+      //   - If elements were copied last (our Ctrl+C) → clipboard has marker text, no image
+      //   - If image was copied last (browser or our "Copy Image") → clipboard has image, marker may or may not persist
+      //
+      // Order: image FIRST (because browser "Copy Image" may not clear marker text),
+      // then marker, then internal clipboard fallback.
+
+      if (imageFile) {
+        // System clipboard has an image → use it (works for both browser and our "Copy Image")
+        if (elements.length === 0 && !bgImage) {
+          loadImageFile(imageFile);
+        } else {
+          addOverlayImage(imageFile);
+        }
+        e.preventDefault();
+        return;
+      }
+
+      if (markerElements) {
+        // System clipboard has our marker → paste as elements
+        internalPasteElements(markerElements);
+        e.preventDefault();
+        return;
+      }
+
+      // Fallback: internal clipboard elements
+      if (clipboardRef.current && clipboardRef.current.length) {
+        e.preventDefault();
+        pasteElements();
       }
     };
     window.addEventListener("paste", onPaste);
@@ -770,13 +821,35 @@ export default function App() {
   function copySelectedElements() {
     if (!selectedIds.length || selectedIds[0] === "__canvas__") return;
     const els = elements.filter((e) => selectedIds.includes(e.id));
-    setClipboardElements(JSON.parse(JSON.stringify(els)));
+    const serialized = JSON.parse(JSON.stringify(els));
+    setClipboardElements(serialized);
+    clipboardRef.current = serialized; // sync ref synchronously
+    // Also write to the system clipboard as text/plain so "last copy wins" works
+    const payload = JSON.stringify({ __marker: CLIPBOARD_MARKER, elements: serialized });
+    navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([payload], { type: "text/plain" }) })]).catch(() => {});
   }
 
   function pasteElements() {
-    if (!clipboardElements || !clipboardElements.length) return;
+    const src = clipboardRef.current;
+    if (!src || !src.length) return;
     updateElements((prev) => {
-      const newEls = clipboardElements.map((el) => {
+      const newEls = src.map((el) => {
+        const copy = { ...el, id: uid(), x: el.x + 20, y: el.y + 20 };
+        if (el.type === "pen" && el.points) {
+          copy.points = el.points.map(([px, py]) => [px + 20, py + 20]);
+        }
+        return copy;
+      });
+      setSelectedIds(newEls.map((c) => c.id));
+      return [...prev, ...newEls];
+    });
+  }
+
+  /** paste data that came from the system clipboard (already parsed) */
+  function internalPasteElements(src) {
+    if (!src || !src.length) return;
+    updateElements((prev) => {
+      const newEls = src.map((el) => {
         const copy = { ...el, id: uid(), x: el.x + 20, y: el.y + 20 };
         if (el.type === "pen" && el.points) {
           copy.points = el.points.map(([px, py]) => [px + 20, py + 20]);
@@ -886,13 +959,7 @@ export default function App() {
           copyAsImage();
         }
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "v" && !editingTextId) {
-        // Paste copied elements from internal clipboard
-        if (clipboardElements && clipboardElements.length) {
-          e.preventDefault();
-          pasteElements();
-        }
-      }
+      // Ctrl+V is handled by the global paste event listener (elements + images)
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1040,7 +1107,8 @@ export default function App() {
   async function copyAsImage() {
     try {
       setCopyStatus(null);
-      setClipboardElements(null); // clear internal clipboard so Ctrl+V pastes image instead of elements
+      clipboardRef.current = null; // clear ref synchronously so keydown handler sees it
+      setClipboardElements(null);
       const canvasOut = await buildExportCanvas();
       const dataUrl = canvasOut.toDataURL("image/png");
       const blob = await (await fetch(dataUrl)).blob();
