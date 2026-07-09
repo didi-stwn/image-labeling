@@ -4,7 +4,7 @@ A browser-based image annotation and editing tool built with React. Draw shapes,
 
 ## Preview
 
-[![Image Labeling Preview](https://raw.githubusercontent.com/didi-stwn/image-labeling/main/public/image_labeling.png)](https://didi-stwn.github.io/image-labeling/)
+[![Image Labeling Preview](./public/image_labeling.png)](https://didi-stwn.github.io/image-labeling/)
 
 [![🚀 Live Demo - Click Here](https://img.shields.io/badge/🚀_Live_Demo-Click_Here-4FC08D?style=for-the-badge)](https://didi-stwn.github.io/image-labeling/)
 
