@@ -138,6 +138,7 @@ export default function App() {
   const [editingTextId, setEditingTextId] = useState(null);
   const [copyStatus, setCopyStatus] = useState(null); // null | "copied" | "failed"
   const [marqueeRect, setMarqueeRect] = useState(null); // {x, y, w, h} for rubber-band selection
+  const [snapGuides, setSnapGuides] = useState([]); // [{axis, pos, start, end}] for alignment guide lines
 
   // Image overlay popover & screenshot states
   const [showImagePopover, setShowImagePopover] = useState(false);
@@ -578,8 +579,102 @@ export default function App() {
         return { ...el, x, y, width: Math.abs(dx) || 1, height: Math.abs(dy) || 1 };
       }), false);
     } else if (drag.mode === "move") {
-      const dx = pt.x - drag.startX;
-      const dy = pt.y - drag.startY;
+      let dx = pt.x - drag.startX;
+      let dy = pt.y - drag.startY;
+
+      // Shift key → constrain to horizontal or vertical
+      if (e.shiftKey) {
+        if (Math.abs(dx) > Math.abs(dy)) {
+          dy = 0;
+        } else {
+          dx = 0;
+        }
+      }
+
+      // Snap guide computation — use the primary element being dragged
+      const snapThreshold = 5;
+      const newGuides = [];
+      const rawX = drag.origX + dx;
+      const rawY = drag.origY + dy;
+      const dragW = drag.origW || 100;
+      const dragH = drag.origH || 40;
+      const centers = { x: canvasW / 2, y: canvasH / 2 };
+      const dragEdges = { left: rawX, right: rawX + dragW, top: rawY, bottom: rawY + dragH };
+      const dragCenter = { x: rawX + dragW / 2, y: rawY + dragH / 2 };
+
+      let snapDx = 0, snapDy = 0;
+
+      // Helper to check snap for a target value against drag edges/center
+      function checkSnap(dragValue, targetValue, axis) {
+        const diff = dragValue - targetValue;
+        if (Math.abs(diff) < snapThreshold) {
+          return diff;
+        }
+        return null;
+      }
+
+      // Check against canvas center
+      for (const edge of ["left", "right", "centerX"]) {
+        const dv = edge === "left" ? dragEdges.left : edge === "right" ? dragEdges.right : dragCenter.x;
+        const snap = checkSnap(dv, centers.x);
+        if (snap !== null) {
+          snapDx = -snap;
+          newGuides.push({ axis: "x", pos: centers.x, start: 0, end: canvasH });
+          break;
+        }
+      }
+      for (const edge of ["top", "bottom", "centerY"]) {
+        const dv = edge === "top" ? dragEdges.top : edge === "bottom" ? dragEdges.bottom : dragCenter.y;
+        const snap = checkSnap(dv, centers.y);
+        if (snap !== null) {
+          snapDy = -snap;
+          newGuides.push({ axis: "y", pos: centers.y, start: 0, end: canvasW });
+          break;
+        }
+      }
+
+      // Check against other element edges
+      if (newGuides.length === 0) {
+        for (const other of elementsRef.current) {
+          if (other.id === drag.id || (drag.multiIds && drag.multiIds.includes(other.id))) continue;
+          const o = { left: other.x, right: other.x + other.width, top: other.y, bottom: other.y + other.height, centerX: other.x + other.width / 2, centerY: other.y + other.height / 2 };
+          // Try snapping each drag edge to each other element edge
+          for (const de of ["left", "right", "centerX"]) {
+            for (const oe of ["left", "right", "centerX"]) {
+              const dv = de === "left" ? dragEdges.left : de === "right" ? dragEdges.right : dragCenter.x;
+              const ov = o[oe];
+              const snap = checkSnap(dv, ov);
+              if (snap !== null) {
+                snapDx = -snap;
+                newGuides.push({ axis: "x", pos: ov, start: Math.min(dragEdges.top, o.top), end: Math.max(dragEdges.bottom, o.bottom) });
+                break;
+              }
+            }
+            if (snapDx !== 0) break;
+          }
+          for (const de of ["top", "bottom", "centerY"]) {
+            for (const oe of ["top", "bottom", "centerY"]) {
+              const dv = de === "top" ? dragEdges.top : de === "bottom" ? dragEdges.bottom : dragCenter.y;
+              const ov = o[oe];
+              const snap = checkSnap(dv, ov);
+              if (snap !== null) {
+                snapDy = -snap;
+                newGuides.push({ axis: "y", pos: ov, start: Math.min(dragEdges.left, o.left), end: Math.max(dragEdges.right, o.right) });
+                break;
+              }
+            }
+            if (snapDy !== 0) break;
+          }
+          if (snapDx !== 0 || snapDy !== 0) break;
+        }
+      }
+
+      setSnapGuides(newGuides);
+
+      // Apply snap offset and shift-constrain
+      dx += snapDx;
+      dy += snapDy;
+
       updateElements((prev) => prev.map((el) => {
         const isMulti = drag.multiIds && drag.multiIds.includes(el.id);
         if (!isMulti && el.id !== drag.id) return el;
@@ -604,25 +699,76 @@ export default function App() {
     } else if (drag.mode === "resize") {
       const dx = pt.x - drag.startX;
       const dy = pt.y - drag.startY;
+      // Compute target edges for snap guide lines
+      const origX = drag.origX, origY = drag.origY, origW = drag.origW, origH = drag.origH;
+      let targetX = origX, targetY = origY, targetW = origW, targetH = origH;
+      if (drag.handle.includes("e")) targetW = Math.max(8, origW + dx);
+      if (drag.handle.includes("s")) targetH = Math.max(8, origH + dy);
+      if (drag.handle.includes("w")) { targetW = Math.max(8, origW - dx); targetX = origX + (origW - targetW); }
+      if (drag.handle.includes("n")) { targetH = Math.max(8, origH - dy); targetY = origY + (origH - targetH); }
+      // Snap guide computation
+      const newGuides = [];
+      const snapThreshold = 5;
+      const canvasCenterX = canvasW / 2, canvasCenterY = canvasH / 2;
+      const resizeEdges = { left: targetX, right: targetX + targetW, top: targetY, bottom: targetY + targetH, centerX: targetX + targetW / 2, centerY: targetY + targetH / 2 };
+      let snapDx = 0, snapDy = 0;
+      function checkSnap(dv, tv) { const d = dv - tv; return Math.abs(d) < snapThreshold ? d : null; }
+      // Check canvas center
+      for (const e of ["left", "right", "centerX"]) {
+        const s = checkSnap(resizeEdges[e], canvasCenterX);
+        if (s !== null) { snapDx = -s; newGuides.push({ axis: "x", pos: canvasCenterX, start: 0, end: canvasH }); break; }
+      }
+      for (const e of ["top", "bottom", "centerY"]) {
+        const s = checkSnap(resizeEdges[e], canvasCenterY);
+        if (s !== null) { snapDy = -s; newGuides.push({ axis: "y", pos: canvasCenterY, start: 0, end: canvasW }); break; }
+      }
+      // Check other elements
+      if (newGuides.length === 0) {
+        for (const other of elementsRef.current) {
+          if (other.id === drag.id) continue;
+          const o = { left: other.x, right: other.x + other.width, top: other.y, bottom: other.y + other.height, centerX: other.x + other.width / 2, centerY: other.y + other.height / 2 };
+          let found = false;
+          for (const de of ["left", "right", "centerX"]) {
+            for (const oe of ["left", "right", "centerX"]) {
+              const s = checkSnap(resizeEdges[de], o[oe]);
+              if (s !== null) { snapDx = -s; newGuides.push({ axis: "x", pos: o[oe], start: Math.min(resizeEdges.top, o.top), end: Math.max(resizeEdges.bottom, o.bottom) }); found = true; break; }
+            }
+            if (found) break;
+          }
+          for (const de of ["top", "bottom", "centerY"]) {
+            for (const oe of ["top", "bottom", "centerY"]) {
+              const s = checkSnap(resizeEdges[de], o[oe]);
+              if (s !== null) { snapDy = -s; newGuides.push({ axis: "y", pos: o[oe], start: Math.min(resizeEdges.left, o.left), end: Math.max(resizeEdges.right, o.right) }); found = true; break; }
+            }
+            if (found) break;
+          }
+          if (found) break;
+        }
+      }
+      setSnapGuides(newGuides);
+      // Recompute with snap offset
+      const snapDxLocal = snapDx, snapDyLocal = snapDy;
       updateElements((prev) => prev.map((el) => {
         if (el.id !== drag.id) return el;
-        let { x, y, width, height } = { x: drag.origX, y: drag.origY, width: drag.origW, height: drag.origH };
+        let { x, y, width, height } = { x: origX, y: origY, width: origW, height: origH };
+        // Apply both mouse delta and snap offset
+        const sdx = dx + snapDxLocal, sdy = dy + snapDyLocal;
         if (el.keepAspectRatio && (el.type === "image")) {
-          const aspect = drag.origW / drag.origH;
+          const aspect = origW / origH;
           if (drag.handle.includes("e") || drag.handle.includes("w")) {
-            width = Math.max(8, drag.origW + (drag.handle.includes("w") ? -dx : dx));
+            width = Math.max(8, origW + (drag.handle.includes("w") ? -sdx : sdx));
             height = Math.round(width / aspect);
-            if (drag.handle.includes("w")) { x = drag.origX + (drag.origW - width); }
+            if (drag.handle.includes("w")) { x = origX + (origW - width); }
           } else {
-            height = Math.max(8, drag.origH + (drag.handle.includes("n") ? -dy : dy));
+            height = Math.max(8, origH + (drag.handle.includes("n") ? -sdy : sdy));
             width = Math.round(height * aspect);
-            if (drag.handle.includes("n")) { y = drag.origY + (drag.origH - height); }
+            if (drag.handle.includes("n")) { y = origY + (origH - height); }
           }
         } else {
-          if (drag.handle.includes("e")) width = Math.max(8, drag.origW + dx);
-          if (drag.handle.includes("s")) height = Math.max(8, drag.origH + dy);
-          if (drag.handle.includes("w")) { width = Math.max(8, drag.origW - dx); x = drag.origX + (drag.origW - width); }
-          if (drag.handle.includes("n")) { height = Math.max(8, drag.origH - dy); y = drag.origY + (drag.origH - height); }
+          if (drag.handle.includes("e")) width = Math.max(8, origW + sdx);
+          if (drag.handle.includes("s")) height = Math.max(8, origH + sdy);
+          if (drag.handle.includes("w")) { width = Math.max(8, origW - sdx); x = origX + (origW - width); }
+          if (drag.handle.includes("n")) { height = Math.max(8, origH - sdy); y = origY + (origH - height); }
         }
         return { ...el, x, y, width, height };
       }), false);
@@ -693,6 +839,7 @@ export default function App() {
       return;
     }
     if (wasCanvasResize) return;
+    setSnapGuides([]);
     // commit final state into history (re-sync by pushing current as a checkpoint)
     setElements((prev) => {
       pushHistory(prev);
@@ -733,8 +880,8 @@ export default function App() {
     });
     dragRef.current = {
       mode: "move", id: el.id, multiIds: idsToMove, multi: idsToMove.length > 1,
-      startX: pt.x, startY: pt.y, origX: el.x, origY: el.y, origPoints: el.points,
-      origPositions,
+      startX: pt.x, startY: pt.y, origX: el.x, origY: el.y, origW: el.width, origH: el.height,
+      origPoints: el.points, origPositions,
     };
     window.addEventListener("pointermove", onWindowPointerMove);
     window.addEventListener("pointerup", onWindowPointerUp);
@@ -1410,6 +1557,17 @@ export default function App() {
                 pointerEvents: "none", zIndex: 100,
               }} />
             )}
+            {/* Alignment snap guide lines */}
+            {snapGuides.map((g, i) => (
+              <div key={i} style={{
+                position: "absolute",
+                background: "#3b82f6",
+                pointerEvents: "none", zIndex: 99,
+                ...(g.axis === "x"
+                  ? { left: g.pos, top: g.start, width: 1, height: g.end - g.start }
+                  : { top: g.pos, left: g.start, height: 1, width: g.end - g.start }),
+              }} />
+            ))}
             {selectedIds[0] === "__canvas__" && tool === "select" && (
               <>
                 <div className="no-canvas-drag" onPointerDown={(e) => startCanvasResize(e, "e")}
