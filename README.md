@@ -2,6 +2,20 @@
 
 A browser-based image annotation and editing tool built with React. Draw shapes, add text, overlay images, take screenshots, and export your work — all in a single-page app.
 
+## Preview
+
+<p align="center">
+  <a href="https://didi-stwn.github.io/image-labeling/" target="_blank" rel="noopener noreferrer">
+    <img src="public/image_labeling.png" alt="Image Labeling Preview" width="100%" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://didi-stwn.github.io/image-labeling/" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/🚀_Live_Demo-Click_Here-4FC08D?style=for-the-badge" alt="Live Demo" />
+  </a>
+</p>
+
 ## Features
 
 ### Canvas
