@@ -155,6 +155,7 @@ export default function App() {
   const canvasContainerRef = useRef(null);
   const dragRef = useRef(null); // info about ongoing drag/draw/resize/rotate
   const cropElDragRef = useRef(null); // {startX, startY, startRect} for element crop
+  const preCropRef = useRef(null); // {src, width, height, x, y} — snapshot before crop for cancel restore
   const panRef = useRef(null); // {startX, startY, scrollLeft, scrollTop} for middle-button pan
   const elementsRef = useRef(elements);
   elementsRef.current = elements; // always up-to-date for use in closures
@@ -364,8 +365,35 @@ export default function App() {
   function startElementCrop() {
     if (!selectedEl || selectedEl.type !== "image") return;
     setCroppingElId(selectedEl.id);
-    // Start with full element bounds as initial crop rect
-    setCropElRect({ x: 0, y: 0, w: selectedEl.width, h: selectedEl.height });
+    // Save pre-crop state for cancel restore
+    preCropRef.current = {
+      src: selectedEl.src,
+      width: selectedEl.width,
+      height: selectedEl.height,
+      x: selectedEl.x,
+      y: selectedEl.y,
+    };
+    // Determine original source and dimensions
+    const origSrc = selectedEl.originalSrc || selectedEl.src;
+    const origW = selectedEl.originalWidth || selectedEl.width;
+    const origH = selectedEl.originalHeight || selectedEl.height;
+    // Save original source/dimensions on the element if not already saved
+    if (!selectedEl.originalSrc) {
+      updateElements((prev) => prev.map((p) =>
+        p.id === selectedEl.id ? { ...p, originalSrc: origSrc, originalWidth: origW, originalHeight: origH } : p
+      ));
+    }
+    // Temporarily resize element to original dimensions so the original image shows at full size
+    updateElements((prev) => prev.map((p) =>
+      p.id === selectedEl.id ? { ...p, src: origSrc, width: origW, height: origH } : p
+    ));
+    // Restore previous crop rect (stored as cropData on element), or default to full bounds
+    if (selectedEl.cropData) {
+      // cropData is stored in original-image pixel coordinates
+      setCropElRect({ ...selectedEl.cropData });
+    } else {
+      setCropElRect({ x: 0, y: 0, w: origW, h: origH });
+    }
   }
 
   function startCropResize(e, handle) {
@@ -391,6 +419,8 @@ export default function App() {
     if (!el || el.type !== "image") return;
     const { x, y, w, h } = cropElRect;
     if (w < 5 || h < 5) { cancelElementCrop(); return; }
+    // Use the original source — el.src is temporarily the original image during crop
+    const sourceSrc = el.originalSrc || el.src;
     const img = new window.Image();
     img.onload = () => {
       const outCanvas = document.createElement("canvas");
@@ -402,13 +432,11 @@ export default function App() {
       const natAspect = img.width / img.height;
       let sx, sy, sw, sh;
       if (natAspect > elemAspect) {
-        // Image is wider than element → crop left/right
         sh = img.height;
         sw = img.height * elemAspect;
         sx = (img.width - sw) / 2;
         sy = 0;
       } else {
-        // Image is taller → crop top/bottom
         sw = img.width;
         sh = img.width / elemAspect;
         sx = 0;
@@ -418,19 +446,32 @@ export default function App() {
       const scaleY = sh / el.height;
       ctx.drawImage(img, sx + x * scaleX, sy + y * scaleY, w * scaleX, h * scaleY, 0, 0, w, h);
       const croppedSrc = outCanvas.toDataURL("image/png");
+      // Save cropData (crop rect in original-image pixel coords) so re-crop remembers previous area
+      const cropData = { x, y, w, h };
       updateElements((prev) => prev.map((p) => p.id === croppingElId
-        ? { ...p, src: croppedSrc, width: w, height: h, keepAspectRatio: true }
+        ? { ...p, src: croppedSrc, width: w, height: h, keepAspectRatio: true,
+            cropData,
+            originalSrc: p.originalSrc || sourceSrc,
+            originalWidth: p.originalWidth || el.width,
+            originalHeight: p.originalHeight || el.height }
         : p
       ));
       cancelElementCrop();
     };
-    img.src = el.src;
+    img.src = sourceSrc;
   }
 
   function cancelElementCrop() {
+    // Restore element to pre-crop state (src, dimensions, position)
+    if (preCropRef.current && croppingElId) {
+      updateElements((prev) => prev.map((p) =>
+        p.id === croppingElId ? { ...p, ...preCropRef.current } : p
+      ));
+    }
     setCroppingElId(null);
     setCropElRect(null);
     cropElDragRef.current = null;
+    preCropRef.current = null;
     if (dragRef.current?.mode === "crop-resize") {
       dragRef.current = null;
       window.removeEventListener("pointermove", onWindowPointerMove);
@@ -1642,13 +1683,14 @@ export default function App() {
                       </div>
                     )
                   ) : el.type === "image" ? (
-                    <img src={el.src} draggable={false} alt="shape"
+                    <img src={el.src}
+                      draggable={false} alt="shape"
                       style={{ width: "100%", height: "100%", objectFit: "fill", userSelect: "none", pointerEvents: "none" }} />
                   ) : (
                     <ShapeSVG el={el} />
                   )}
 
-                  {isPrimary && isSelected && tool === "select" && (
+                  {isPrimary && isSelected && tool === "select" && !croppingElId && (
                     <>
                       {["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => (
                         <div key={h} className="no-canvas-drag" onPointerDown={(e) => startResize(e, el, h)}
@@ -1729,16 +1771,13 @@ export default function App() {
               return (
                 <>
                   <div style={{
-                    position: "absolute", inset: 0, background: "rgba(0,0,0,.45)",
-                    zIndex: 50, pointerEvents: "none",
-                  }} />
-                  <div style={{
                     position: "absolute",
                     left: cxp, top: cyp,
                     width: cwp, height: chp,
                     border: "2px dashed #fff",
                     pointerEvents: "none", zIndex: 51,
-                    boxShadow: "0 0 0 4000px rgba(0,0,0,.45)",
+                    // Darkens everything outside the crop rect; crop area stays clear
+                    boxShadow: "0 0 0 4000px rgba(0,0,0,.55)",
                   }} />
                   {/* Crop resize handles (8-direction) */}
                   {["nw","n","ne","e","se","s","sw","w"].map((h) => (
