@@ -87,7 +87,7 @@ export default function Sidebar({
           <div style={{
             position: "absolute", left: 56, top: 0, background: "#ffffff",
             border: "1px solid #e5e7eb", borderRadius: 10, padding: 6,
-            boxShadow: "0 8px 24px rgba(0,0,0,.1)", zIndex: 100, minWidth: 160,
+            boxShadow: "0 8px 24px rgba(0,0,0,.1)", zIndex: 100, minWidth: 172,
           }}>
             <button onClick={() => { overlayFileInputRef.current?.click(); setShowImagePopover(false); }}
               style={{
