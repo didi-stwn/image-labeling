@@ -1038,6 +1038,9 @@ export default function useAppState() {
   useEffect(() => {
     const onKey = (e) => {
       if (editingTextId) return;
+      // Skip if focus is inside an input/textarea (e.g. editing text element content)
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
       if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.length) { e.preventDefault(); deleteSelected(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
       if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
