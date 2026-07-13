@@ -1,4 +1,5 @@
-import { MousePointer2, Square, Circle, Minus, ArrowUpRight, Type as TypeIcon,
+import {
+  MousePointer2, Square, Circle, Minus, ArrowUpRight, Type as TypeIcon,
   Pencil, Image as ImageIcon, ImagePlus, Trash2, Hand, Triangle, Camera, ClipboardPaste,
 } from "lucide-react";
 import { TOOLS } from "../constants";
@@ -108,18 +109,19 @@ export default function Sidebar({
               onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
               <Camera size={16} /> Take screenshot
             </button>
+            <button title="Ctrl/Cmd+V pastes: adds an overlay image" onClick={() => { }}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, width: "100%",
+                padding: "8px 12px", borderRadius: 8, border: "none", background: "transparent",
+                color: "#1f2937", cursor: "pointer", fontSize: 13,
+              }}>
+              <ClipboardPaste size={16} /> Paste from clipboard
+            </button>
           </div>
         )}
-        <input ref={overlayFileInputRef} type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: "none" }} />
-      </div>
-      <button title="Ctrl/Cmd+V pastes: adds an overlay image" onClick={() => {}}
-        style={{
-          width: 46, height: 46, borderRadius: 10, border: "none", background: "transparent",
-          color: "#6b7280", display: "flex", alignItems: "center", justifyContent: "center", cursor: "default",
-        }}>
-        <ClipboardPaste size={20} />
-      </button>
+      <input ref={overlayFileInputRef} type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: "none" }} />
     </div>
+    </div >
   );
 }
 
