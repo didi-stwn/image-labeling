@@ -406,11 +406,12 @@ export default function useAppState() {
       const markerElements = await readMarker();
 
       if (imageFile) {
-        if (elements.length === 0 && !bgImage) {
-          loadImageFile(imageFile);
-        } else {
-          addOverlayImage(imageFile);
-        }
+        // if (elements.length === 0 && !bgImage) {
+        //   loadImageFile(imageFile);
+        // } else {
+        //   addOverlayImage(imageFile);
+        // }
+        addOverlayImage(imageFile);
         e.preventDefault();
         return;
       }

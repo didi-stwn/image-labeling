@@ -112,7 +112,7 @@ export default function Sidebar({
         )}
         <input ref={overlayFileInputRef} type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: "none" }} />
       </div>
-      <button title="Ctrl/Cmd+V pastes: sets background if empty, otherwise adds an overlay image" onClick={() => {}}
+      <button title="Ctrl/Cmd+V pastes: adds an overlay image" onClick={() => {}}
         style={{
           width: 46, height: 46, borderRadius: 10, border: "none", background: "transparent",
           color: "#6b7280", display: "flex", alignItems: "center", justifyContent: "center", cursor: "default",
