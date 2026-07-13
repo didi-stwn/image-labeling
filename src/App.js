@@ -25,6 +25,16 @@ const TOOLS = [
 
 const COLORS = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#8b5cf6", "#111827", "#ffffff"];
 
+const SIZE_PRESETS = [
+  { label: "FHD (1920×1080)", width: 1920, height: 1080 },
+  { label: "HD (1280×720)", width: 1280, height: 720 },
+  { label: "Square (1080×1080)", width: 1080, height: 1080 },
+  { label: "Square (1:1)", width: 900, height: 900 },
+  { label: "4:3 (1024×768)", width: 1024, height: 768 },
+  { label: "A4 portrait (2480×3508)", width: 2480, height: 3508 },
+  { label: "Custom", width: null, height: null },
+];
+
 function newShape(type, x, y) {
   const base = {
     id: uid(), type, x, y, width: 1, height: 1, rotation: 0,
@@ -122,6 +132,29 @@ function ShapeSVG({ el }) {
 export default function App() {
   const [bgImage, setBgImage] = useState(null); // {src, width, height}
   const [canvasSize, setCanvasSize] = useState({ width: 900, height: 560 });
+  // localCanvasSize mirrors canvasSize but updates immediately on input change
+  const [localCanvasSize, setLocalCanvasSize] = useState({ width: 900, height: 560 });
+  // Keep localCanvasSize in sync when canvasSize changes externally (e.g. preset selection)
+  useEffect(() => {
+    setLocalCanvasSize(canvasSize);
+  }, [canvasSize]);
+  // Canvas size preset — derived from current dimensions, or "Custom" if no match
+  function resolvePreset(w, h) {
+    const match = SIZE_PRESETS.find((p) => p.width === w && p.height === h);
+    return match ? match.label : "Custom";
+  }
+  const [canvasSizePreset, setCanvasSizePreset] = useState(resolvePreset(900, 560));
+  // Debounce timer for committing localCanvasSize → canvasSize
+  const canvasSizeTimerRef = useRef(null);
+  function debouncedCommitCanvasSize(nextSize) {
+    if (canvasSizeTimerRef.current) clearTimeout(canvasSizeTimerRef.current);
+    canvasSizeTimerRef.current = setTimeout(() => {
+      setCanvasSize(nextSize);
+    }, 300);
+  }
+  useEffect(() => () => {
+    if (canvasSizeTimerRef.current) clearTimeout(canvasSizeTimerRef.current);
+  }, []);
   const [canvasColor, setCanvasColor] = useState("#ffffff");
   const [zoom, setZoom] = useState(1);
   const [elements, setElements] = useState([]);
@@ -1728,7 +1761,7 @@ export default function App() {
                   : { top: g.pos, left: g.start, height: 1, width: g.end - g.start }),
               }} />
             ))}
-            {selectedIds[0] === "__canvas__" && tool === "select" && (
+            {selectedIds[0] === "__canvas__" && tool === "select" && canvasSizePreset === "Custom" && (
               <>
                 <div className="no-canvas-drag" onPointerDown={(e) => startCanvasResize(e, "e")}
                   style={{ position: "absolute", top: "50%", right: -6, width: 10, height: 36, marginTop: -18, background: "#3b82f6", borderRadius: 4, cursor: "ew-resize" }} />
@@ -1814,16 +1847,49 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Row label="Type" value="canvas" />
             <div>
+              <div style={{ color: "#6b7280", marginBottom: 4 }}>Size</div>
+              <select value={canvasSizePreset}
+                onChange={(e) => {
+                  const label = e.target.value;
+                  setCanvasSizePreset(label);
+                  if (label !== "Custom") {
+                    const preset = SIZE_PRESETS.find((p) => p.label === label);
+                    if (preset) {
+                      const next = { width: preset.width, height: preset.height };
+                      setLocalCanvasSize(next);
+                      setCanvasSize(next);
+                    }
+                  }
+                }}
+                style={selectStyle}>
+                {SIZE_PRESETS.map((p) => (
+                  <option key={p.label} value={p.label}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <div style={{ color: "#6b7280", marginBottom: 4 }}>Width (px)</div>
-              <input type="number" min={50} max={4000} value={canvasSize.width}
-                onChange={(e) => setCanvasSize((s) => ({ ...s, width: clamp(Number(e.target.value) || 1, 50, 4000) }))}
-                style={selectStyle} />
+              <input type="number" min={0} value={localCanvasSize.width}
+                onChange={(e) => {
+                  const w = clamp(Number(e.target.value) || 1, 50, 4000);
+                  const next = { ...localCanvasSize, width: w };
+                  setLocalCanvasSize(next);
+                  debouncedCommitCanvasSize(next);
+                  setCanvasSizePreset("Custom");
+                }}
+                style={{ ...selectStyle, opacity: canvasSizePreset === "Custom" ? 1 : 0.6 }} />
             </div>
             <div>
               <div style={{ color: "#6b7280", marginBottom: 4 }}>Height (px)</div>
-              <input type="number" min={50} max={4000} value={canvasSize.height}
-                onChange={(e) => setCanvasSize((s) => ({ ...s, height: clamp(Number(e.target.value) || 1, 50, 4000) }))}
-                style={selectStyle} />
+              <input type="number" min={0} value={localCanvasSize.height}
+                onChange={(e) => {
+                  const h = clamp(Number(e.target.value) || 1, 50, 4000);
+                  const next = { ...localCanvasSize, height: h };
+                  setLocalCanvasSize(next);
+                  debouncedCommitCanvasSize(next);
+                  setCanvasSizePreset("Custom");
+                }}
+                style={{ ...selectStyle, opacity: canvasSizePreset === "Custom" ? 1 : 0.6 }} />
             </div>
             {!bgImage && (
               <div>
